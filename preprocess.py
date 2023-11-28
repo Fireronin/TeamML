@@ -4,38 +4,59 @@ import os
 from tqdm import tqdm
 import numpy as np
 
-folder_name = "new2"
+FOLDER_NAME = "new2"
+# FILE_NUMBER = 10
 
 # read
-files_list = os.listdir(folder_name)
+files_list = os.listdir(FOLDER_NAME)
 files_list.sort()
 
-number_to_read = 100#os.listdir(folder_name).__len__()
+# number_to_read = 100#os.listdir(folder_name).__len__()
 
 # read first n files
-files_list = files_list[:number_to_read]
+# files_list = files_list[:number_to_read]
 
 df = None
 
+if not os.path.exists("parquets"):
+    os.mkdir("parquets")
+
+# n = np.ceil(len(files_list) / FILE_NUMBER)
+# accumulated = 0
+# saved = 0
+
 tmp_df = pl.DataFrame()
 # combine all files in the list
-for file in files_list:
+for file in tqdm(files_list):
     
-    tmp_df = pl.read_csv(os.path.join(folder_name, file))
+    tmp_df = pl.read_csv(os.path.join(FOLDER_NAME, file))
     # drop all columns that start with summonerName
-    for column in tmp_df.columns:
-        if column.startswith("summonerName"):
-            tmp_df = tmp_df.drop(column)
+    tmp_df = tmp_df.drop(["summonerName1","summonerName2","summonerName3","summonerName4","summonerName5","summonerName6","summonerName7","summonerName8","summonerName9","summonerName10"])
+    
     if df is None:
         df = tmp_df
+        # accumulated = 1
         continue
     # reorder columns to match the order of the first file
     tmp_df = tmp_df.select(df.columns)
     
-    df = df.vstack(tmp_df)
+    # accumulated += 1
+    
+    df.vstack(tmp_df, in_place=True)
 
-df.head()
+    # if accumulated >= n:
+    #     df.write_parquet(f"parquets/new2_{saved}.parquet",compression="zstd",compression_level=5,use_pyarrow=True)
+    #     #df.write_parquet(f"parquets/new2_{saved}.parquet",compression="uncompressed")
+    #     accumulated = 0
+    #     df = None
+    #     saved+=1
+    #     continue
 
+
+# if accumulated > 0:
+df.write_parquet(f"parquets/new2.parquet",compression="zstd",compression_level=5,use_pyarrow=True)
+
+exit()
 # read 
 
 #%%
