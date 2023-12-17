@@ -177,9 +177,9 @@ def process_file(file):
 dfs = []
 k = 100
 chunk_count = len(files_list) // k	
-ct = 0
+ct = 166
 
-for file_chunk in tqdm(more_itertools.chunked(files_list[:10], k)):
+for file_chunk in tqdm(more_itertools.chunked(files_list[ct*k:], k)):
     dfs = map(process_file, file_chunk)
     df = pd.concat(dfs)
     df.to_parquet(f"timeline_parquets/timeline_{ct}.parquet",compression="zstd")
