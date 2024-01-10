@@ -2,8 +2,11 @@ new2*
 *.npy
 Miniforge3-Linux-x86_64.sh
 
+match/
 timeline/
+timeline_new/
 timeline_parquets/
 timeline_parquets_chunked/
+transformed_data/
 raw_data/
 parquets/
