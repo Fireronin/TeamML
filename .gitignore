@@ -10,3 +10,4 @@ timeline_parquets_chunked/
 transformed_data/
 raw_data/
 parquets/
+__pycache__/
