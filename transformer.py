@@ -10,7 +10,7 @@ class TransformerModel(nn.Module):
         self.src_mask = None
 
         # input_dim: scalar value representing the total dimensionality of the input
-        input_dim = game_dim + item_dim + 2 * team_dim + 10 * (player_dim + champion_dim + runes_dim)
+        input_dim = game_dim + item_dim + 2 * team_dim + 10 * (player_dim + champion_dim + 9 * runes_dim)
 
         self.pos_encoder = PositionalEncoding(input_dim, dropout)
         encoder_layers = TransformerEncoderLayer(input_dim, nhead, dropout=dropout, batch_first=True)
@@ -42,40 +42,79 @@ class TransformerModel(nn.Module):
         return mask
 
     def forward(self, src):
-        # src: input tensor of shape (batch_size, seq_len, n_features)
-        if self.src_mask is None or self.src_mask.size(0) != len(src):
-            device = src.device
-            mask = self._generate_square_subsequent_mask(len(src)).to(device)
+        device = src.device
+        # src: input tensor of shape (batch_size, game_len, n_features)
+        if self.src_mask is None or self.src_mask.size(0) != src.shape[1]:   
+            mask = self._generate_square_subsequent_mask(src.shape[1]).to(device)
             self.src_mask = mask
 
         # Splitting the input tensor into different parts
-        src_game = src[:, :, :self.ngame_cont]  # shape: (batch_size, seq_len, ngame_cont)
-        src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].to(torch.int)  # shape: (batch_size, seq_len, 1)
+        src_game = src[:, :, :self.ngame_cont]  # shape: (batch_size, game_len, ngame_cont)
+
+        src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].squeeze(dim=-1).cpu().to(torch.int)  # shape: (batch_size, game_len)
         # src_teams and src_player_* are lists of tensors
-        # src_teams = [src[:, :, (self.ngame_cont + 1 + i * self.nteam_cont):(self.ngame_cont + 1 + (i + 1) * self.nteam_cont)] for i in range(2)]  # each tensor in the list has shape: (batch_size, seq_len, nteam_cont)
-        src_player_linears = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10] for i in range(10)]  # each tensor in the list has shape: (batch_size, seq_len, nplayer_cont)
-        src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].to(torch.int) for i in range(10)]  # each tensor in the list has shape: (batch_size, seq_len, 1)
-        src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)].to(torch.int) for i in range(10)] # each tensor in the list has shape: (batch_size, seq_len, 9)
+        # src_teams = [src[:, :, (self.ngame_cont + 1 + i * self.nteam_cont):(self.ngame_cont + 1 + (i + 1) * self.nteam_cont)] for i in range(2)]  # each tensor in the list has shape: (batch_size, game_len, nteam_cont)
+
+        src_player_linears = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10] for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len, nplayer_cont)
+        src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1).cpu().to(torch.int) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
+        src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)].cpu().to(torch.int) for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
+
+
+        # print(f'src_game shape before embed: {src_game.shape}')
+        # print(f'src_item shape before embed: {src_item.shape}')
+        # print(f'src_player_linears len before embed: {len(src_player_linears)}')
+        # for i in range(10):
+        #     print(f'src_player_linears[{i}] shape before embed: {src_player_linears[i].shape}')
+        # print(f'src_player_champions len before embed: {len(src_player_champions)}')
+        # for i in range(10):
+        #     print(f'src_player_champions[{i}] shape before embed: {src_player_champions[i].shape}')
+        # print(f'src_player_runes len before embed: {len(src_player_runes)}')
+        # for i in range(10):
+        #     print(f'src_player_runes[{i}] shape before embed: {src_player_runes[i].shape}')
 
         # Applying linear layers and embeddings
-        src_game = self.game_linear(src_game)  # shape: (batch_size, seq_len, game_dim)
-        src_item = self.item_embedding(src_item) * math.sqrt(self.item_dim)
-        # src_item = src_item.squeeze(dim=-2)  # shape: (batch_size, seq_len, item_dim)
-        # src_teams = [self.team_linear(team) for team in src_teams]  # each tensor in the list has shape: (batch_size, seq_len, team_dim)
-        src_player_linears = [self.player_linear(player) for player in src_player_linears]  # each tensor in the list has shape: (batch_size, seq_len, player_dim)
-        src_player_champions = [(self.champion_embedding(player) * math.sqrt(self.champion_dim)) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, seq_len, champion_dim)
-        src_player_runes = [(self.runes_embedding(rune) * math.sqrt(self.runes_dim)) for runes in src_player_runes for rune in runes]  # each tensor in the list has shape: (batch_size, seq_len, runes_dim)
+        src_game = self.game_linear(src_game)  # shape: (batch_size, game_len, game_dim)
+        src_item = self.item_embedding(src_item) * math.sqrt(self.item_dim) # shape: (batch_size, game_len, item_dim)
+        # src_item = src_item.squeeze(dim=-2)  
+        # src_teams = [self.team_linear(team) for team in src_teams]  # each tensor in the list has shape: (batch_size, game_len, team_dim)
+        src_player_linears = [self.player_linear(player) for player in src_player_linears]  # each tensor in the list has shape: (batch_size, game_len, player_dim)
+        src_player_champions = [self.champion_embedding(player) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
+        src_player_runes = [(self.runes_embedding(runes) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
+
+        # print(f'src_game shape after embed: {src_game.shape}')
+        # print(f'src_item shape after embed: {src_item.shape}')
+        # print(f'src_player_linears len after embed: {len(src_player_linears)}')
+        # for i in range(10):
+        #     print(f'src_player_linears[{i}] shape after embed: {src_player_linears[i].shape}')
+        # print(f'src_player_champions len after embed: {len(src_player_champions)}')
+        # for i in range(10):
+        #     print(f'src_player_champions[{i}] shape after embed: {src_player_champions[i].shape}')
+        # print(f'src_player_runes len after embed: {len(src_player_runes)}')
+        # for i in range(10):
+        #     print(f'src_player_runes[{i}] shape after embed: {src_player_runes[i].shape}')
 
         # Concatenating all the parts
         src = [src_game, src_item]
         src.extend([item for sublist in zip(src_player_linears, src_player_champions, src_player_runes) for item in sublist])  # list of tensors
 
-        for s in src:
-            print(s.shape)
-        src = torch.cat(src, dim=-1)  # shape: (batch_size, seq_len, input_dim)
-        src = self.pos_encoder(src)  # shape: (batch_size, seq_len, input_dim)
-        output = self.transformer_encoder(src, self.src_mask)  # shape: (batch_size, seq_len, input_dim)
-        output = self.decoder(output[:, -1, :])  # shape: (batch_size, output_dim)
+        src = torch.cat(src, dim=-1)  # shape: (batch_size, game_len, input_dim)
+
+        # print(f'src shape before positional encoding: {src.shape}')
+
+        src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
+
+        # print(f'src shape after positional encoding: {src.shape}')
+        # print(f'mask shape: {self.src_mask.shape}')
+
+        output = self.transformer_encoder(src, self.src_mask)  # shape: (batch_size, game_len, input_dim)
+
+        # print(f'output shape after encoding: {output.shape}')
+
+        output = self.decoder(output)  # shape: (batch_size, game_len, output_dim)
+        output = nn.functional.softmax(output, dim=-1)
+
+        # print(f'output shape after decoding: {output.shape}')
+
         return output
 
 class PositionalEncoding(nn.Module):
@@ -93,13 +132,16 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         # pe[:, 1::2]: tensor of shape (max_len, d_model // 2)
         pe[:, 1::2] = torch.cos(position * div_term)
-        # pe: tensor of shape (max_len, 1, d_model) after unsqueeze and transpose
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        # pe: tensor of shape (1, max_len, d_model) after unsqueeze
+        pe = pe.unsqueeze(0)
+
+        # print(f'pe shape: {pe.shape}')
+
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        # x: input tensor of shape (seq_len, batch_size, d_model)
-        # self.pe[:x.size(0), :]: tensor of shape (seq_len, 1, d_model)
-        x = x + self.pe[:x.size(0), :]
-        # output tensor of shape (seq_len, batch_size, d_model) after dropout
+        # x: input tensor of shape (batch_size, game_len, d_model)
+        # self.pe[:x.size(0), :]: tensor of shape (1, game_len, d_model)
+        x = x + self.pe[:, :x.size(1), :]
+        # output tensor of shape (batch_size, game_len, d_model) after dropout
         return self.dropout(x)
