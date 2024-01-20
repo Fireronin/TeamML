@@ -50,15 +50,13 @@ class TransformerModel(nn.Module):
 
         # Splitting the input tensor into different parts
         src_game = src[:, :, :self.ngame_cont]  # shape: (batch_size, game_len, ngame_cont)
-
-        src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].squeeze(dim=-1).cpu().to(torch.int)  # shape: (batch_size, game_len)
+        src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].squeeze(dim=-1)  # shape: (batch_size, game_len)
         # src_teams and src_player_* are lists of tensors
         # src_teams = [src[:, :, (self.ngame_cont + 1 + i * self.nteam_cont):(self.ngame_cont + 1 + (i + 1) * self.nteam_cont)] for i in range(2)]  # each tensor in the list has shape: (batch_size, game_len, nteam_cont)
 
         src_player_linears = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10] for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len, nplayer_cont)
-        src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1).cpu().to(torch.int) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
-        src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)].cpu().to(torch.int) for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
-
+        src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
+        src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)] for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
 
         # print(f'src_game shape before embed: {src_game.shape}')
         # print(f'src_item shape before embed: {src_item.shape}')
@@ -74,12 +72,12 @@ class TransformerModel(nn.Module):
 
         # Applying linear layers and embeddings
         src_game = self.game_linear(src_game)  # shape: (batch_size, game_len, game_dim)
-        src_item = self.item_embedding(src_item) * math.sqrt(self.item_dim) # shape: (batch_size, game_len, item_dim)
-        # src_item = src_item.squeeze(dim=-2)  
+        src_item = self.item_embedding(src_item.cpu().to(torch.int)).to(device) * math.sqrt(self.item_dim) # shape: (batch_size, game_len, item_dim)
+
         # src_teams = [self.team_linear(team) for team in src_teams]  # each tensor in the list has shape: (batch_size, game_len, team_dim)
         src_player_linears = [self.player_linear(player) for player in src_player_linears]  # each tensor in the list has shape: (batch_size, game_len, player_dim)
-        src_player_champions = [self.champion_embedding(player) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
-        src_player_runes = [(self.runes_embedding(runes) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
+        src_player_champions = [self.champion_embedding(player.cpu().to(torch.int)).to(device) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
+        src_player_runes = [(self.runes_embedding(runes.cpu().to(torch.int)).to(device) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
 
         # print(f'src_game shape after embed: {src_game.shape}')
         # print(f'src_item shape after embed: {src_item.shape}')

@@ -11,7 +11,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 EPOCHS = 10
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEVICE = 'cpu'
+# DEVICE = 'cpu'
 BATCH_SIZE = 2
 
 print(f'Device: {DEVICE}')
@@ -30,7 +30,7 @@ class LoLDataset(Dataset):
 df = pl.read_parquet('transformed_data/timeline_0.parquet')
 
 games = []
-grouped = df.group_by('matchId')
+grouped = df.group_by(['matchId'])
 for name, group in grouped:
     group = group.drop('matchId')
     games.append(torch.from_numpy(group.to_numpy()))
