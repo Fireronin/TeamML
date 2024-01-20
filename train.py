@@ -1,3 +1,4 @@
+#%%
 from transformer import TransformerModel
 
 from tqdm import tqdm
@@ -48,6 +49,9 @@ train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 # 70 runes (?)
 model = TransformerModel(3, 10, 5, 120, 0, 48, 22700, 1670, 70000, 50, 0, 30, 20, 30, 5).to(DEVICE)
 
+# print number of parameters
+print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+
 optimizer = optim.Adam(model.parameters())
 criterion = nn.CrossEntropyLoss()
 
@@ -69,6 +73,9 @@ for epoch in tqdm(range(EPOCHS)):
         # forward pass
         y_pred = model(X)
 
+        y_pred = y_pred.view(-1, y_pred.shape[-1])
+        y = y.view(-1, y.shape[-1])
+        
         # compute the loss
         loss = criterion(y_pred, y)
 
@@ -82,4 +89,6 @@ for epoch in tqdm(range(EPOCHS)):
         optimizer.step()
 
     # print the loss
-    print(f'Epoch: {epoch}, Loss: {torch.mean(losses)}')
+    print(f'Epoch: {epoch}, Loss: {torch.mean(torch.tensor(losses))}')
+
+# %%
