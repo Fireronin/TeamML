@@ -1,8 +1,10 @@
 #%%
 from transformer import TransformerModel
 
-from tqdm import tqdm
+from dotenv import load_dotenv
+load_dotenv()
 
+from tqdm import tqdm
 import polars as pl
 import torch
 import torch.optim as optim
@@ -13,7 +15,7 @@ from torch.nn.utils.rnn import pad_sequence
 EPOCHS = 10
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # DEVICE = 'cpu'
-BATCH_SIZE = 2
+BATCH_SIZE = 4
 
 print(f'Device: {DEVICE}')
 

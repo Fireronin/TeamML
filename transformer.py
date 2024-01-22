@@ -81,12 +81,12 @@ class TransformerModel(nn.Module):
 
         # Applying linear layers and embeddings
         src_game = self.game_linear(src_game)  # shape: (batch_size, game_len, game_dim)
-        src_item = self.item_embedding.cpu()(src_item.cpu().to(torch.int)).to(device) * math.sqrt(self.item_dim) # shape: (batch_size, game_len, item_dim)
+        src_item = self.item_embedding(src_item.to(torch.int)).to(device) * math.sqrt(self.item_dim) # shape: (batch_size, game_len, item_dim)
 
         # src_teams = [self.team_linear(team) for team in src_teams]  # each tensor in the list has shape: (batch_size, game_len, team_dim)
         src_player_linears = [self.player_linear(player) for player in src_player_linears]  # each tensor in the list has shape: (batch_size, game_len, player_dim)
-        src_player_champions = [self.champion_embedding.cpu()(player.cpu().to(torch.int)).to(device) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
-        src_player_runes = [(self.runes_embedding.cpu()(runes.cpu().to(torch.int)).to(device) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
+        src_player_champions = [self.champion_embedding(player.to(torch.int)).to(device) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
+        src_player_runes = [(self.runes_embedding(runes.to(torch.int)).to(device) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
 
         # print(f'src_game shape after embed: {src_game.shape}')
         # print(f'src_item shape after embed: {src_item.shape}')
