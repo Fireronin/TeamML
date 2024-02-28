@@ -4,11 +4,20 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import math
 
 class TransformerModel(nn.Module):
-    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, dropout=0.5):
+    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, max_, dropout=0.1):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+        self.n_unique = torch.tensor(n_unique).to(device)
+        self.mean = torch.tensor(mean).to(device)
+        self.std = torch.tensor(std).to(device)
+        self.max_ = torch.tensor(max_).to(device)
+
+        print(f'mean: {self.mean}')
+        print(f'std: {self.std}')
+        
         # input_dim: scalar value representing the total dimensionality of the input
         input_dim = game_dim + item_dim + 2 * team_dim + 10 * (player_dim + champion_dim + 9 * runes_dim)
 
@@ -43,7 +52,21 @@ class TransformerModel(nn.Module):
 
         self.batch_norm = nn.BatchNorm1d(input_dim)
 
-        self.decoder = nn.Linear(input_dim, output_dim) 
+        print(f'input_dim: {input_dim}') # 1120
+        print(f'output_dim: {output_dim}') # 2
+        #self.decoder = nn.Linear(input_dim, output_dim) 
+        
+        self.decoder = nn.Sequential(
+            nn.Linear(input_dim, 100),
+            nn.BatchNorm1d(100),
+            nn.LeakyReLU(),
+            nn.Linear(100, 50),
+            nn.BatchNorm1d(50),
+            nn.LeakyReLU(),
+            nn.Linear(50, output_dim)
+        )
+            
+        
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -59,25 +82,24 @@ class TransformerModel(nn.Module):
 
         # Splitting the input tensor into different parts
         src_game = src[:, :, :self.ngame_cont]  # shape: (batch_size, game_len, ngame_cont)
+        # using mean and std to normalize mean and std are vectors of size n_features
+        src_game = (src_game - self.mean[:self.ngame_cont]) / self.std[:self.ngame_cont]
+        
         src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].squeeze(dim=-1)  # shape: (batch_size, game_len)
         # src_teams and src_player_* are lists of tensors
         # src_teams = [src[:, :, (self.ngame_cont + 1 + i * self.nteam_cont):(self.ngame_cont + 1 + (i + 1) * self.nteam_cont)] for i in range(2)]  # each tensor in the list has shape: (batch_size, game_len, nteam_cont)
 
         src_player_linears = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10] for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len, nplayer_cont)
+        # normalize src_player_linears
+        for i in range(10):
+            src_player_linears[i] = (src_player_linears[i] - self.mean[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]) \
+            / self.std[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]
+
+        
         src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
         src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)] for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
 
-        # print(f'src_game shape before embed: {src_game.shape}')
-        # print(f'src_item shape before embed: {src_item.shape}')
-        # print(f'src_player_linears len before embed: {len(src_player_linears)}')
-        # for i in range(10):
-        #     print(f'src_player_linears[{i}] shape before embed: {src_player_linears[i].shape}')
-        # print(f'src_player_champions len before embed: {len(src_player_champions)}')
-        # for i in range(10):
-        #     print(f'src_player_champions[{i}] shape before embed: {src_player_champions[i].shape}')
-        # print(f'src_player_runes len before embed: {len(src_player_runes)}')
-        # for i in range(10):
-        #     print(f'src_player_runes[{i}] shape before embed: {src_player_runes[i].shape}')
+
 
         # Applying linear layers and embeddings
         src_game = self.game_linear(src_game)  # shape: (batch_size, game_len, game_dim)
@@ -88,27 +110,14 @@ class TransformerModel(nn.Module):
         src_player_champions = [self.champion_embedding(player.to(torch.int)).to(device) * math.sqrt(self.champion_dim) for player in src_player_champions]  # each tensor in the list has shape: (batch_size, game_len, champion_dim)
         src_player_runes = [(self.runes_embedding(runes.to(torch.int)).to(device) * math.sqrt(self.runes_dim)).reshape(runes.shape[:-1] + (-1,)) for runes in src_player_runes]  # each tensor in the list has shape: (batch_size, game_len, runes_dim)
 
-        # print(f'src_game shape after embed: {src_game.shape}')
-        # print(f'src_item shape after embed: {src_item.shape}')
-        # print(f'src_player_linears len after embed: {len(src_player_linears)}')
-        # for i in range(10):
-        #     print(f'src_player_linears[{i}] shape after embed: {src_player_linears[i].shape}')
-        # print(f'src_player_champions len after embed: {len(src_player_champions)}')
-        # for i in range(10):
-        #     print(f'src_player_champions[{i}] shape after embed: {src_player_champions[i].shape}')
-        # print(f'src_player_runes len after embed: {len(src_player_runes)}')
-        # for i in range(10):
-        #     print(f'src_player_runes[{i}] shape after embed: {src_player_runes[i].shape}')
-
-        # Concatenating all the parts
+        
         src = [src_game, src_item]
         src.extend([item for sublist in zip(src_player_linears, src_player_champions, src_player_runes) for item in sublist])  # list of tensors
 
         src = torch.cat(src, dim=-1)  # shape: (batch_size, game_len, input_dim)
 
         # batch norm
-        #print(f'src shape before batch norm: {src.shape}')
-        
+
         #src = self.batch_norm(src)
         
         # functional batch norm
@@ -120,26 +129,28 @@ class TransformerModel(nn.Module):
         src_reshaped = src.view(-1, src.shape[2])
 
         # Apply batch normalization
-        src_normalized = self.batch_norm(src_reshaped)
+        #src_reshaped = self.batch_norm(src_reshaped)
+
 
         # Reshape src back to its original shape
-        src = src_normalized.view(src.shape)
+        src = src_reshaped.view(src.shape)
 
-        # print(f'src shape before positional encoding: {src.shape}')
 
         src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
 
-        # print(f'src shape after positional encoding: {src.shape}')
-        # print(f'mask shape: {self.src_mask.shape}')
 
-        output = self.transformer_encoder(src, self.src_mask)  # shape: (batch_size, game_len, input_dim)
+        #output = self.transformer_encoder(src, self.src_mask,is_causal=True)  # shape: (batch_size, game_len, input_dim)
+        causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(src.shape[1]).to(device)
+        output = self.transformer_encoder(src,causal_mask, is_causal=True)  # shape: (batch_size, game_len, input_dim)
 
-        # print(f'output shape after encoding: {output.shape}')
-
-        output = self.decoder(output)  # shape: (batch_size, game_len, output_dim)
-        output = nn.functional.softmax(output, dim=-1)
-
-        # print(f'output shape after decoding: {output.shape}')
+        BATCH_SIZE = output.shape[0]
+        SEQ_LEN = output.shape[1]
+        output = output.view(BATCH_SIZE * SEQ_LEN , -1)
+        output = self.decoder(output)
+        output = output.view(BATCH_SIZE, SEQ_LEN, -1)
+        #print(f'output: {output}')
+        #output = self.decoder(output)  # shape: (batch_size, game_len, output_dim)
+        #output = nn.functional.softmax(output, dim=-1)
 
         return output
 
