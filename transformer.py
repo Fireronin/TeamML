@@ -4,7 +4,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import math
 
 class TransformerModel(nn.Module):
-    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, max_, dropout=0.1):
+    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, dropout=0.1):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -13,7 +13,7 @@ class TransformerModel(nn.Module):
         self.n_unique = torch.tensor(n_unique).to(device)
         self.mean = torch.tensor(mean).to(device)
         self.std = torch.tensor(std).to(device)
-        self.max_ = torch.tensor(max_).to(device)
+        # self.max_ = torch.tensor(max_).to(device)
 
         print(f'mean: {self.mean}')
         print(f'std: {self.std}')
@@ -139,15 +139,13 @@ class TransformerModel(nn.Module):
         src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
 
 
-        #output = self.transformer_encoder(src, self.src_mask,is_causal=True)  # shape: (batch_size, game_len, input_dim)
-        causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(src.shape[1]).to(device)
-        output = self.transformer_encoder(src,causal_mask, is_causal=True)  # shape: (batch_size, game_len, input_dim)
+        output = self.transformer_encoder(src, self.src_mask, is_causal=True)  # shape: (batch_size, game_len, input_dim)
 
-        BATCH_SIZE = output.shape[0]
-        SEQ_LEN = output.shape[1]
-        output = output.view(BATCH_SIZE * SEQ_LEN , -1)
+        batch_size = output.shape[0]
+        seq_len = output.shape[1]
+        output = output.view(batch_size * seq_len , -1)
         output = self.decoder(output)
-        output = output.view(BATCH_SIZE, SEQ_LEN, -1)
+        output = output.view(batch_size, seq_len, -1)
         #print(f'output: {output}')
         #output = self.decoder(output)  # shape: (batch_size, game_len, output_dim)
         #output = nn.functional.softmax(output, dim=-1)
