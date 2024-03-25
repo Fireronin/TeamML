@@ -4,7 +4,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import math
 
 class TransformerModel(nn.Module):
-    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, max_, dropout=0.1):
+    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, dropout=0.1):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -13,7 +13,7 @@ class TransformerModel(nn.Module):
         self.n_unique = torch.tensor(n_unique).to(device)
         self.mean = torch.tensor(mean).to(device)
         self.std = torch.tensor(std).to(device)
-        self.max_ = torch.tensor(max_).to(device)
+        # self.max_ = torch.tensor(max_).to(device)
 
         print(f'mean: {self.mean}')
         print(f'std: {self.std}')
@@ -44,17 +44,10 @@ class TransformerModel(nn.Module):
         
         self.input_dim = input_dim
        
-        # 2 learnable parameters for batch norm
-        # self.gamma = nn.Parameter(torch.ones(input_dim))
-        # self.beta = nn.Parameter(torch.zeros(input_dim))
-        
-        
-
         self.batch_norm = nn.BatchNorm1d(input_dim)
 
         print(f'input_dim: {input_dim}') # 1120
-        print(f'output_dim: {output_dim}') # 2
-        #self.decoder = nn.Linear(input_dim, output_dim) 
+        print(f'output_dim: {output_dim}')
         
         self.decoder = nn.Sequential(
             nn.Linear(input_dim, 100),
@@ -67,7 +60,6 @@ class TransformerModel(nn.Module):
         )
             
         
-
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
@@ -94,11 +86,9 @@ class TransformerModel(nn.Module):
         for i in range(10):
             src_player_linears[i] = (src_player_linears[i] - self.mean[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]) \
             / self.std[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]
-
         
         src_player_champions = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
         src_player_runes = [src[:, :, (self.ngame_cont + 1 + 2 * self.nteam_cont + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10)] for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
-
 
 
         # Applying linear layers and embeddings
@@ -116,41 +106,24 @@ class TransformerModel(nn.Module):
 
         src = torch.cat(src, dim=-1)  # shape: (batch_size, game_len, input_dim)
 
-        # batch norm
-
-        #src = self.batch_norm(src)
         
-        # functional batch norm
-        # src = nn.functional.batch_norm(src, self.gamma, self.beta, training=True)
-        # apply this to each batch
-        # for i in range(src.shape[0]):
-        #     src[i] = self.batch_norm(src[i])
-
-        src_reshaped = src.view(-1, src.shape[2])
-
         # Apply batch normalization
-        #src_reshaped = self.batch_norm(src_reshaped)
+        src_reshaped = src.view(-1, src.shape[2])
+        src_reshaped = self.batch_norm(src_reshaped)
 
-
-        # Reshape src back to its original shape
         src = src_reshaped.view(src.shape)
 
 
         src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
 
 
-        #output = self.transformer_encoder(src, self.src_mask,is_causal=True)  # shape: (batch_size, game_len, input_dim)
-        causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(src.shape[1]).to(device)
-        output = self.transformer_encoder(src,causal_mask, is_causal=True)  # shape: (batch_size, game_len, input_dim)
+        output = self.transformer_encoder(src, self.src_mask, is_causal=True)  # shape: (batch_size, game_len, input_dim)
 
-        BATCH_SIZE = output.shape[0]
-        SEQ_LEN = output.shape[1]
-        output = output.view(BATCH_SIZE * SEQ_LEN , -1)
+        batch_size = output.shape[0]
+        seq_len = output.shape[1]
+        output = output.view(batch_size * seq_len , -1)
         output = self.decoder(output)
-        output = output.view(BATCH_SIZE, SEQ_LEN, -1)
-        #print(f'output: {output}')
-        #output = self.decoder(output)  # shape: (batch_size, game_len, output_dim)
-        #output = nn.functional.softmax(output, dim=-1)
+        output = output.view(batch_size, seq_len, -1)
 
         return output
 
