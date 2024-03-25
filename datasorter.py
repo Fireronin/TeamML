@@ -1,9 +1,10 @@
+#%%
 import polars as pl
 import os
 from tqdm import tqdm
 
 
-folder_name = "timeline_new"
+folder_name = "timeline_parquets_chunked"
 files_list = sorted(os.listdir(folder_name))
 
 
@@ -44,11 +45,9 @@ cols = ["matchId"] + cols + ['itemId'] + playerscols + ["winningTeam"]
 
 # print(cols)
 
-for file in tqdm(files_list[:1]):
+for file in tqdm(files_list):
 
     df = pl.scan_parquet(os.path.join(folder_name, files_list[0])).collect()
-
-    
 
     df = df.to_dummies(cols_to_one_hot)
 
@@ -59,3 +58,4 @@ for file in tqdm(files_list[:1]):
     print(df.columns)
 
     df.write_parquet(f"transformed_data/{file}",compression="zstd",compression_level=10,use_pyarrow=True)
+# %%

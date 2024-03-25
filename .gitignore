@@ -11,3 +11,5 @@ transformed_data/
 raw_data/
 parquets/
 __pycache__/
+newplot.png
+.vscode/c_cpp_properties.json
