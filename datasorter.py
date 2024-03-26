@@ -47,13 +47,13 @@ cols = ["matchId"] + cols + ['itemId'] + playerscols + ["winningTeam"]
 
 import json
 
-with open('runes_data.json', 'r') as file:
+with open('mapping_data/runes_data.json', 'r') as file:
     runes = json.load(file)
 
-with open('items_data.json', 'r') as file:
+with open('mapping_data/items_data.json', 'r') as file:
     items = json.load(file)
 
-with open('champs_data.json', 'r') as file:
+with open('mapping_data/champs_data.json', 'r') as file:
     champs = json.load(file)
 
 for file in tqdm(files_list[:2]):
