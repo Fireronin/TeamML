@@ -17,7 +17,7 @@ from multiprocessing import Pool
 # decompress them and read them as json in timelineDecompressed folder
 
 #%%
-folder_name = r"C:\Users\nudy1\Downloads\raw_data\timeline"
+folder_name = "raw_data/timeline"
 files_list = os.listdir(folder_name)
 files_list.sort()
 number_to_read = os.listdir(folder_name).__len__()

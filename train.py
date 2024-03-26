@@ -24,6 +24,28 @@ BATCH_SIZE = 8
 
 print(f'Device: {DEVICE}')
 
+
+# 58 per player, 48 + 1 + 9
+# 227 items (?)
+# 70 runes (?)
+output_dim = 1
+nhead = 10
+nlayers = 2
+ngame_cont = 120
+nteam_cont = 0
+nplayer_cont = 48
+nitems = 22700
+nchampions = 1670
+nrunes = 70000
+game_dim = 50
+team_dim = 0
+player_dim = 30
+item_dim = 20
+champion_dim = 30
+runes_dim = 5
+dropout = 0.1
+
+
 class LoLDataset(Dataset):
     def __init__(self, data, targets):
         self.data = data
@@ -68,26 +90,6 @@ dataset = LoLDataset(X, y)
 train_dataset, test_dataset = random_split(dataset, [0.8, 0.2])
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-
-# 58 per player, 48 + 1 + 9
-# 227 items (?)
-# 70 runes (?)
-output_dim = 1
-nhead = 10
-nlayers = 2
-ngame_cont = 120
-nteam_cont = 0
-nplayer_cont = 48
-nitems = 22700
-nchampions = 1670
-nrunes = 70000
-game_dim = 50
-team_dim = 0
-player_dim = 30
-item_dim = 20
-champion_dim = 30
-runes_dim = 5
-dropout = 0.1
 
 model = TransformerModel(
     output_dim, 
