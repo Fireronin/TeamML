@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 
 
-folder_name = "timeline_parquets_chunked"
+folder_name = "timeline_new"
 files_list = sorted(os.listdir(folder_name))
 
 
@@ -56,29 +56,25 @@ with open('mapping_data/items_data.json', 'r') as file:
 with open('mapping_data/champs_data.json', 'r') as file:
     champs = json.load(file)
 
-for file in tqdm(files_list[:2]):
+for file in tqdm(files_list):
 
     df = pl.scan_parquet(os.path.join(folder_name, file)).collect()
 
     for id in range(1,11):
         for suffix in ['runeDefense','runeFlex', 'runeOffense', 'perk1', 'perk2', 'perk3', 'perk4', 'perk5', 'perk6']:
-            # rune = row[f"{id}_{suffix}"]
             col = df.get_column(f"{id}_{suffix}")
-            col = col.map_elements(lambda t: runes[t])  
-            df.replace(f"{id}_{suffix}", col)
-            # for row in col.iter_rows():
+            col = col.map_elements(lambda t: runes[str(float(t))])
+            df = df.with_columns(col.alias(f"{id}_{suffix}"))
 
         col = df.get_column(f"{id}_championId")
-        col = col.map_elements(lambda t: champs[t])  
-        df.replace(f"{id}_championId", col)
+        col = col.map_elements(lambda t: champs[str(float(t))])
+        df = df.with_columns(col.alias(f"{id}_championId"))
 
     col = df.get_column(f"itemId")
-    col = col.map_elements(lambda t: items[t])  
-    df.replace(f"itemId", col)
+    col = col.map_elements(lambda t: items[str(t)])
+    df = df.with_columns(col.alias(f"itemId"))
 
     df = df.to_dummies(cols_to_one_hot)
-
-    # necessary_columns = ['wardType_TEEMO_MUSHROOM']
 
     for col in cols:
         if col not in df.columns:
@@ -88,6 +84,6 @@ for file in tqdm(files_list[:2]):
 
     df = df.fill_null(0)
 
-    print(df.columns)
+    # print(df.columns)
 
     df.write_parquet(f"transformed_data/{file}", compression="zstd", compression_level=10, use_pyarrow=True)
