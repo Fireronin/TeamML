@@ -1,3 +1,4 @@
+#%%
 import os
 from tqdm import tqdm
 import lzma
@@ -6,7 +7,7 @@ import pandas as pd
 
 import math
 
-FOLDER_NAME = 'raw_data/match'
+FOLDER_NAME = '../raw_data/match'
 
 # folder_name = r"C:\Users\nudy1\Downloads\raw_data\timeline"
 files_list = os.listdir(FOLDER_NAME)
@@ -50,6 +51,8 @@ for file in tqdm(files_list):
 
 df = pd.concat(dfs)
 
-df.to_parquet(f"parquets/match_basic.parquet",compression="zstd")
+df.to_parquet(f"../parquets/match_basic.parquet",compression="zstd")
 
 # if __name__ == '__main__':
+
+# %%

@@ -1,9 +1,10 @@
+#%%
 import json
 import os
 import pandas as pd
 import math
 
-df = pd.read_parquet(os.path.join("parquets", "match_basic.parquet"))
+df = pd.read_parquet(os.path.join("../parquets", "match_basic.parquet"))
 
 runes = set()
 champs = set()
@@ -48,10 +49,11 @@ champs_dict = {k: v for k, v in zip(list(sorted(champs)), range(1, len(champs) +
 champs_data = json.dumps(champs_dict)
 
 # Write JSON data to a file
-with open('mapping_data/runes_data.json', 'w') as file:
+with open('../mapping_data/runes_data.json', 'w') as file:
     file.write(runes_data)
 
-with open('mapping_data/champs_data.json', 'w') as file:
+with open('../mapping_data/champs_data.json', 'w') as file:
     file.write(champs_data)
 
 print(badMathes)
+# %%

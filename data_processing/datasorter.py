@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 
 
-folder_name = "timeline_new"
+folder_name = "../timeline_new"
 files_list = sorted(os.listdir(folder_name))
 
 
@@ -47,13 +47,13 @@ cols = ["matchId"] + cols + ['itemId'] + playerscols + ["winningTeam"]
 
 import json
 
-with open('mapping_data/runes_data.json', 'r') as file:
+with open('../mapping_data/runes_data.json', 'r') as file:
     runes = json.load(file)
 
-with open('mapping_data/items_data.json', 'r') as file:
+with open('../mapping_data/items_data.json', 'r') as file:
     items = json.load(file)
 
-with open('mapping_data/champs_data.json', 'r') as file:
+with open('../mapping_data/champs_data.json', 'r') as file:
     champs = json.load(file)
 
 for file in tqdm(files_list):
@@ -86,4 +86,5 @@ for file in tqdm(files_list):
 
     # print(df.columns)
 
-    df.write_parquet(f"transformed_data/{file}", compression="zstd", compression_level=10, use_pyarrow=True)
+    df.write_parquet(f"../transformed_data/{file}", compression="zstd", compression_level=10, use_pyarrow=True)
+# %%
