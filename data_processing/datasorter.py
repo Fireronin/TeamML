@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 
 
-folder_name = "timeline_parquets_chunked"
+folder_name = "../timeline_new"
 files_list = sorted(os.listdir(folder_name))
 
 
@@ -47,13 +47,13 @@ cols = ["matchId"] + cols + ['itemId'] + playerscols + ["winningTeam"]
 
 import json
 
-with open('mapping_data/runes_data.json', 'r') as file:
+with open('../mapping_data/runes_data.json', 'r') as file:
     runes = json.load(file)
 
-with open('mapping_data/items_data.json', 'r') as file:
+with open('../mapping_data/items_data.json', 'r') as file:
     items = json.load(file)
 
-with open('mapping_data/champs_data.json', 'r') as file:
+with open('../mapping_data/champs_data.json', 'r') as file:
     champs = json.load(file)
 
 for file in tqdm(files_list[:2]):
@@ -64,7 +64,7 @@ for file in tqdm(files_list[:2]):
         for suffix in ['runeDefense','runeFlex', 'runeOffense', 'perk1', 'perk2', 'perk3', 'perk4', 'perk5', 'perk6']:
             # rune = row[f"{id}_{suffix}"]
             col = df.get_column(f"{id}_{suffix}")
-            col = col.map_elements(lambda t: runes[t])  
+            col = col.map_elements( lambda t: runes[float(t)])  
             df.replace(f"{id}_{suffix}", col)
             # for row in col.iter_rows():
 
@@ -90,4 +90,5 @@ for file in tqdm(files_list[:2]):
 
     print(df.columns)
 
-    df.write_parquet(f"transformed_data/{file}", compression="zstd", compression_level=10, use_pyarrow=True)
+    df.write_parquet(f"../transformed_data/{file}", compression="zstd", compression_level=10, use_pyarrow=True)
+# %%
