@@ -53,7 +53,7 @@ example_df = pl.read_parquet(os.path.join(folder_name, files_list[0]))
 
 def get_stats(files_list, func):
     stats = []
-    for file in tqdm(files_list):
+    for file in files_list:
         if file.endswith(".parquet"):
             df = pl.read_parquet(os.path.join(folder_name, file))
             for name, group in tqdm(df.group_by('matchId')):
@@ -169,22 +169,70 @@ def game_length_and_count(game_df):
         "game_count": 1
     }
 
+
+def gold_advantage_as_win_predictor(game_df):
+    # sum [1-5]_totalGold and [6-10]_totalGold for each row
+    # if [1-5]_totalGold > [6-10]_totalGold, team 100 wins
+    # else team 200 wins
+    # add a column "seconds" timestamp/1000
+    # wining_team = game_df['winningTeam'][-1]
+    # finaly create a numpy array [60*60] with 1 if prediction is correct, 0 otherwise
+    
+    game_df = game_df.with_columns([
+        (game_df['1_totalGold'] + game_df['2_totalGold'] + game_df['3_totalGold'] + game_df['4_totalGold'] + game_df['5_totalGold']).alias("total_gold_team_100"),
+        (game_df['6_totalGold'] + game_df['7_totalGold'] + game_df['8_totalGold'] + game_df['9_totalGold'] + game_df['10_totalGold']).alias("total_gold_team_200")])
+
+
+    wining_team = (game_df['winningTeam'][-1]-100.0)/100.0
+    
+    game_df = game_df.with_columns([game_df['timestamp'].alias("seconds")/1000.0])
+    game_df = game_df.filter([pl.col("seconds") < 60*60])
+    
+    game_df = game_df.with_columns([((game_df['total_gold_team_100'] < game_df['total_gold_team_200']).cast(pl.Int32).alias("prediction"))])
+    game_df = game_df.with_columns([((game_df['prediction'] == wining_team).cast(pl.Int32).alias("correct"))])
+    
+    # add column with ones
+    game_df = game_df.with_columns([pl.Series("ones", [1]*game_df.height).alias("ones")])
+    
+    grouped_validation = game_df.group_by("seconds").agg(pl.sum("ones"))#.sort("seconds")
+    grouped_prediction = game_df.group_by("seconds").agg(pl.sum("correct"))#.sort("seconds")
+
+    correct = grouped_prediction['correct'].to_numpy()
+    valid = grouped_validation['ones'].to_numpy()
+    
+    # now to similar thing but group not by seconds but by percentage of game length (100 buckets)
+    bucket_size = game_df['timestamp'][-1]/100
+    game_df = game_df.with_columns([((game_df['timestamp']/bucket_size ).cast(pl.Int32).alias("percentage"))])
+ 
+    grouped_prediction_percentage = game_df.group_by("percentage").agg(pl.sum("correct")).sort("percentage")
+    grouped_validation_percentage = game_df.group_by("percentage").agg(pl.sum("ones")).sort("percentage")
+    
+    correct_percentage = grouped_prediction_percentage['correct'].to_numpy()
+    valid_percentage = grouped_validation_percentage['ones'].to_numpy()
+    
+    return {
+        'correct_gold_predictions': correct,
+        'valid_gold_predictions': valid,
+        'correct_gold_predictions_percentage': correct_percentage,
+        'valid_gold_predictions_percentage': valid_percentage
+    }
+
 game1 = None
 
 def game_stats(game_df):
     global game1
     game1 = game_df
     stats = {}
-    functions = [wining_team,first_kill,objective_counters,game_length_and_count]
+    functions = [gold_advantage_as_win_predictor,wining_team,first_kill,objective_counters,game_length_and_count]
     for f in functions:
         stats.update(f(game_df))
     return stats
     
-# %%a
+# %%
 
 stats = get_stats(files_list[:1], game_stats)
 
-print(stats)
+#print(stats)
 
 # %%
 
@@ -272,19 +320,68 @@ def post_process_stats(stats):
             
     output['first_kill_win_ratio'] = first_kill_win_ratio
     
+    # gold advantage as win predictor
+    correct_total = np.zeros(60*60)
+    valid_total = np.zeros(60*60)
+    
+    correct_total_percentage = np.zeros(101)
+    valid_total_percentage = np.zeros(101)
+    
+    for game_stats in stats:
+        length = len(game_stats['correct_gold_predictions'])
+        correct_total[0:length] += game_stats['correct_gold_predictions']
+        valid_total[0:length] += game_stats['valid_gold_predictions']
+        length = len(game_stats['correct_gold_predictions_percentage'])
+        correct_total_percentage[0:length] += game_stats['correct_gold_predictions_percentage']
+        valid_total_percentage[0:length] += game_stats['valid_gold_predictions_percentage']
+    
+    
+    # find first 0 in valid_total
+    first_zero = np.where(valid_total == 0)[0][0]
+    correct_total = correct_total[:first_zero]
+    valid_total = valid_total[:first_zero]
+    output['gold_advantage_win_ratio'] = correct_total / valid_total
+    output['valid_gold_predictions'] = valid_total
+    output['correct_gold_predictions_percentage'] = correct_total_percentage / valid_total_percentage
+    output['valid_gold_predictions_percentage'] = valid_total_percentage
 
     
     return output
 # %%
 post_stats = post_process_stats(stats)
-print(post_stats)
+#print(post_stats)
+if not os.path.exists('stats'):
+    os.makedirs('stats')
+# %%
+from plotly.subplots import make_subplots 
+# draw a graph of gold_advantage_win_ratio
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+fig.add_trace(
+    go.Scatter(x=np.arange(len(post_stats['correct_gold_predictions_percentage'])), y=post_stats['correct_gold_predictions_percentage'], name='Gold Advantage Win Ratio'),
+    secondary_y=False
+)
+
+fig.add_trace(
+    go.Scatter(x=np.arange(len(post_stats['valid_gold_predictions_percentage'])), y=post_stats['valid_gold_predictions_percentage'],name='Valid Gold Predictions'),
+    secondary_y=True
+)
+
+fig.update_layout(
+    title_text='Gold Advantage as Win Predictor',
+    xaxis_title_text='Seconds',
+    yaxis_title_text='Win Ratio',
+    yaxis2=dict(title='Valid Gold Predictions', overlaying='y', side='right')
+)
+
+fig.show()
+
 # %%
 # Create a table for Objective Counters , columns: objective_type, sub_type, count
 # polars takes dict of lists as input
 
 # create folder stats if it does not exist
-if not os.path.exists('stats'):
-    os.makedirs('stats')
+
 
 def create_objective_counters_table(post_stats):
     objective_counters = post_stats['objective_counters']
