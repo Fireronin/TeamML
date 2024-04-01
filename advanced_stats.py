@@ -361,6 +361,7 @@ def gold_advantage_as_win_predictor(game_df):
         to_add_df = pl.DataFrame(to_add_columns,{ "percentage": pl.Categorical,"correct": pl.Int32, "count": pl.UInt32})
         percentage_df = pl.concat([percentage_df,to_add_df],how="vertical_relaxed")
     
+    percentage_df = percentage_df.sort("percentage")
     correct_percentage = percentage_df["correct"].to_numpy()
     valid_percentage = percentage_df["count"].to_numpy()
     
