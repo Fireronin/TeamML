@@ -175,14 +175,14 @@ def process_file(file):
 			return game_to_df(procesed_game)
 
 dfs = []
-k = 100
+k = 1000
 chunk_count = len(files_list) // k	
 ct = 397
 
 for file_chunk in tqdm(more_itertools.chunked(files_list[ct*k:], k)):
     dfs = map(process_file, file_chunk)
     df = pd.concat(dfs)
-    df.to_parquet(f"../timeline_parquets/timeline_{ct}.parquet",compression="zstd")
+    df.to_parquet(f"../timeline_parquets_chunked/timeline_{ct}.parquet",compression="zstd")
     dfs = []
     ct+=1
 
