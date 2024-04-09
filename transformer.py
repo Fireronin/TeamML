@@ -4,19 +4,15 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import math
 
 class TransformerModel(nn.Module):
-    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, n_unique, mean, std, dropout=0.1):
+    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nteam_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, team_dim, player_dim, item_dim, champion_dim, runes_dim, mean, std, dropout=0.1):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.n_unique = torch.tensor(n_unique).to(device)
         self.mean = torch.tensor(mean).to(device)
         self.std = torch.tensor(std).to(device)
         # self.max_ = torch.tensor(max_).to(device)
-
-        print(f'mean: {self.mean}')
-        print(f'std: {self.std}')
         
         # input_dim: scalar value representing the total dimensionality of the input
         input_dim = game_dim + item_dim + 2 * team_dim + 10 * (player_dim + champion_dim + 9 * runes_dim)
@@ -46,8 +42,8 @@ class TransformerModel(nn.Module):
        
         self.batch_norm = nn.BatchNorm1d(input_dim)
 
-        print(f'input_dim: {input_dim}') # 1120
-        print(f'output_dim: {output_dim}')
+        # print(f'input_dim: {input_dim}') # 1120
+        # print(f'output_dim: {output_dim}')
         
         self.decoder = nn.Sequential(
             nn.Linear(input_dim, 100),

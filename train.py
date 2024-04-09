@@ -15,12 +15,19 @@ import plotly.graph_objects as go
 import plotly.express as px
 import lovely_tensors as lt
 import numpy as np
+import os
+import gc
 
 lt.monkey_patch()
-EPOCHS = 2
+
+EPOCHS = 20
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # DEVICE = 'cpu'
 BATCH_SIZE = 8
+
+DATA_FOLDER = 'transformed_data'
+GRAPHS_FOLDER = 'training_graphs'
+CHECKPOINTS_FOLDER = 'checkpoints'
 
 print(f'Device: {DEVICE}')
 
@@ -57,37 +64,51 @@ class LoLDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx], self.targets[idx]
 
-df = pl.read_parquet('transformed_data/timeline_0.parquet')
+files_list = os.listdir(DATA_FOLDER)
+dfs = []
+for file in files_list[:2]:
+    df = pl.read_parquet(os.path.join(DATA_FOLDER, file))
+    dfs.append(df)
+    del df
 
-# for each column compute the number of unique values, mean, std and max
-n_unique = []
+gc.collect()
+
+df = pl.concat(dfs)
+
+del dfs
+gc.collect()
+
 mean = []
 std = []
 for col in df.columns:
     if col == 'matchId':
         continue
-    n_unique.append(df[col].n_unique())
     mean.append(df[col].mean())
     std.append(df[col].std())
-    
-# if std is 0, replace it with 1
+
 std = [s if s != 0 else 1 for s in std]
 
-games = []
 grouped = df.group_by(['matchId'])
-# print number of games
-print(f'Number of games: {grouped.count().shape[0]}')
-
+games = []
 for name, group in grouped:
     group = group.drop('matchId')
     games.append(torch.from_numpy(group.to_numpy()))
 
+del grouped
+gc.collect()
+
 games = pad_sequence(games, batch_first=True).to(torch.float)
+print(f'Number of games: {games.shape[0]}')
+
+gc.collect()
+
 games[:, :, -1] = games[:, 0, -1].unsqueeze(-1)
 X = games[:, :, :-1]
 y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
+max_game_len = X.shape[1]
+
 dataset = LoLDataset(X, y)
-train_dataset, test_dataset = random_split(dataset, [0.8, 0.2])
+train_dataset, test_dataset = random_split(dataset, [0.9, 0.1])
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
 
@@ -107,7 +128,6 @@ model = TransformerModel(
     item_dim, 
     champion_dim, 
     runes_dim,
-    n_unique,
     mean,
     std,
     dropout
@@ -116,9 +136,9 @@ model = TransformerModel(
 # print number of parameters
 print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
-optimizer = optim.Adam(model.parameters(),lr=0.01)
+optimizer = optim.Adam(model.parameters())
 criterion = nn.BCEWithLogitsLoss()
-#%%
+
 for epoch in tqdm(range(EPOCHS)):
     # set model to train mode
     model.train()
@@ -148,48 +168,75 @@ for epoch in tqdm(range(EPOCHS)):
         # update the parameters
         optimizer.step()
 
-    # print the loss
-    # print(f'Epoch: {epoch}, Loss: {torch.mean(torch.tensor(losses))}')
 
-max_game_len = X.shape[1]
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        # Include any other variables that need to be saved
+    }, os.path.join(CHECKPOINTS_FOLDER, f'checkpoint_{epoch}.pth'))
 
-accuracy_per_timestep = np.zeros(max_game_len)
-added_preds = np.zeros(max_game_len)
 
-model.eval()
+    mean_loss = torch.mean(torch.tensor(losses))
 
-for X, y in test_loader:
-    X = X.to(DEVICE)
-    y = y.to(DEVICE)
+    trace0 = go.Scatter(
+        y = losses,
+        mode = 'lines',
+        name = 'Loss'
+    )
 
-    y = y.squeeze().detach().cpu().numpy()
-    y_pred = model(X).squeeze().detach().cpu().numpy()
-    X = X.detach().cpu().numpy()
+    trace1 = go.Scatter(
+        x = [0, len(losses)-1],
+        y = [mean_loss, mean_loss],
+        mode = 'lines',
+        name = f'Mean Loss: {mean_loss:.2f}'
+    )
 
-    y_pred[y_pred >= 0] = 1
-    y_pred[y_pred < 0] = 0 
+    fig = go.Figure(data=[trace0, trace1])
+    fig.write_image(os.path.join(GRAPHS_FOLDER, 'loss', f'{epoch}.png'))
 
-    game_len = np.where(X[:, :,-1] > 0)[1][-1] + 1
-    accuracy = (y_pred == y)
-    accuracy_per_timestep[:game_len] += accuracy[:game_len]
-    added_preds[:game_len] += 1
-    
 
-accuracy_per_timestep = accuracy_per_timestep / added_preds
+    model.eval()
 
-trace0 = go.Scatter(
-    y=accuracy_per_timestep,
-    mode='lines',
-    name='accuracy'
-)
+    accuracy_per_timestep = np.zeros(max_game_len)
+    added_preds = np.zeros(max_game_len)
 
-added_preds_normalized = added_preds / added_preds.max()
+    max_training_len = 0
+    for X, y in test_loader:
+        X = X.to(DEVICE)
+        y = y.to(DEVICE)
 
-trace1 = go.Scatter(
-    y=added_preds_normalized,
-    mode='lines',
-    name='added_preds'
-)
+        y = y.squeeze().detach().cpu().numpy()
+        y_pred = model(X).squeeze().detach().cpu().numpy()
+        X = X.detach().cpu().numpy()
 
-fig = go.Figure(data=[trace0,trace1])
-fig.show()
+        y_pred[y_pred >= 0] = 1
+        y_pred[y_pred < 0] = 0 
+
+        game_len = np.where(X[:, :,-1] > 0)[1][-1] + 1
+        max_training_len = max(max_training_len, game_len)
+        accuracy = (y_pred == y)
+        accuracy_per_timestep[:game_len] += accuracy[:game_len]
+        added_preds[:game_len] += 1
+        
+    accuracy_per_timestep = accuracy_per_timestep[:max_training_len]
+    added_preds = added_preds[:max_training_len]
+
+    accuracy_per_timestep = accuracy_per_timestep / added_preds
+
+    trace0 = go.Scatter(
+        y=accuracy_per_timestep,
+        mode='lines',
+        name='Accuracy'
+    )
+
+    added_preds_normalized = added_preds / added_preds.max()
+
+    trace1 = go.Scatter(
+        y=added_preds_normalized,
+        mode='lines',
+        name='Number of games'
+    )
+
+    fig = go.Figure(data=[trace0,trace1])
+    fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{epoch}.png'))
