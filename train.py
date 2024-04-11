@@ -1,5 +1,7 @@
 #%%
+import json
 from transformer import TransformerModel
+import random
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -9,21 +11,20 @@ import polars as pl
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
 import plotly.express as px
 import lovely_tensors as lt
 import numpy as np
 import os
-import gc
 
 lt.monkey_patch()
 
-EPOCHS = 20
+EPOCHS = 10
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# DEVICE = 'cpu'
-BATCH_SIZE = 8
+BATCH_SIZE = 6
+SEED = 42
 
 DATA_FOLDER = 'transformed_data'
 GRAPHS_FOLDER = 'training_graphs'
@@ -31,6 +32,7 @@ CHECKPOINTS_FOLDER = 'checkpoints'
 
 print(f'Device: {DEVICE}')
 
+random.seed(SEED)
 
 # 58 per player, 48 + 1 + 9
 # 227 items (?)
@@ -41,9 +43,9 @@ nlayers = 2
 ngame_cont = 120
 nteam_cont = 0
 nplayer_cont = 48
-nitems = 22700
-nchampions = 1670
-nrunes = 70000
+nitems = 227
+nchampions = 167
+nrunes = 70
 game_dim = 50
 team_dim = 0
 player_dim = 30
@@ -51,71 +53,68 @@ item_dim = 20
 champion_dim = 30
 runes_dim = 5
 dropout = 0.1
-
-
-class LoLDataset(Dataset):
-    def __init__(self, data, targets):
-        self.data = data
-        self.targets = targets
-
+    
+class LoLDatasetCache(Dataset):
+    def __init__(self, max_len, n_games):
+        self.max_len = max_len
+        self.n_games = n_games
+        self.cached_data = None
+        self.cached_targets = None
+        self.cached_file_number = -1
+    
     def __len__(self):
-        return len(self.data)
-
+        return self.n_games
+    
     def __getitem__(self, idx):
-        return self.data[idx], self.targets[idx]
+        file_number = int(idx // 1000)
+        if self.cached_file_number != file_number:
+            file_name =  f'timeline_{file_number}.parquet'
+            df = pl.read_parquet(os.path.join(DATA_FOLDER,file_name))
 
-files_list = os.listdir(DATA_FOLDER)
-dfs = []
-for file in files_list[:2]:
-    df = pl.read_parquet(os.path.join(DATA_FOLDER, file))
-    dfs.append(df)
-    del df
+            grouped = df.group_by(['matchId'])
+            games = []
+            for _, group in grouped:
+                group = group.drop('matchId')
+                games.append(torch.from_numpy(group.to_numpy()))
+            
+            games = pad_sequence(games, batch_first=True).to(torch.float)
 
-gc.collect()
+            if games.shape[1] != self.max_len:
+                padding = torch.zeros((games.shape[0], self.max_len - games.shape[1], games.shape[2]))
+                games = torch.cat((games, padding), 1)
 
-df = pl.concat(dfs)
+            games[:, :, -1] = games[:, 0, -1].unsqueeze(-1)
+            X = games[:, :, :-1]
+            y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
 
-del dfs
-gc.collect()
+            self.cached_data = X
+            self.cached_targets = y
+            self.cached_file_number = file_number
+        
+        return self.cached_data[idx % 1000], self.cached_targets[idx % 1000]
 
-mean = []
-std = []
-for col in df.columns:
-    if col == 'matchId':
-        continue
-    mean.append(df[col].mean())
-    std.append(df[col].std())
+def index_split(n_games):
+    indices = np.arange(n_games)
+    random.shuffle(indices)
+    split_index = int(n_games // 1.1111111)
+    return sorted(indices[:split_index]),sorted(indices[split_index:])
 
-std = [s if s != 0 else 1 for s in std]
+with open('data_stats.json', 'r') as file:
+    data_stats = json.load(file)
 
-grouped = df.group_by(['matchId'])
-games = []
-for name, group in grouped:
-    group = group.drop('matchId')
-    games.append(torch.from_numpy(group.to_numpy()))
+data_stats['n_games'] = 60000
 
-del grouped
-gc.collect()
-
-games = pad_sequence(games, batch_first=True).to(torch.float)
-print(f'Number of games: {games.shape[0]}')
-
-gc.collect()
-
-games[:, :, -1] = games[:, 0, -1].unsqueeze(-1)
-X = games[:, :, :-1]
-y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
-max_game_len = X.shape[1]
-
-dataset = LoLDataset(X, y)
-train_dataset, test_dataset = random_split(dataset, [0.9, 0.1])
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'])
+train_indices, test_indices = index_split(data_stats['n_games'])
+train_dataset = Subset(dataset, train_indices)
+test_dataset = Subset(dataset, test_indices)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 model = TransformerModel(
     output_dim, 
     nhead, 
-    nlayers, 
+    nlayers,
     ngame_cont, 
     nteam_cont, 
     nplayer_cont, 
@@ -128,8 +127,8 @@ model = TransformerModel(
     item_dim, 
     champion_dim, 
     runes_dim,
-    mean,
-    std,
+    data_stats['mean'],
+    data_stats['std'],
     dropout
 ).to(DEVICE)
 
@@ -198,8 +197,8 @@ for epoch in tqdm(range(EPOCHS)):
 
     model.eval()
 
-    accuracy_per_timestep = np.zeros(max_game_len)
-    added_preds = np.zeros(max_game_len)
+    accuracy_per_timestep = np.zeros(data_stats['max_len'])
+    added_preds = np.zeros(data_stats['max_len'])
 
     max_training_len = 0
     for X, y in test_loader:
