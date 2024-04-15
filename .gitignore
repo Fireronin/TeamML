@@ -14,3 +14,5 @@ __pycache__/
 newplot.png
 .vscode/c_cpp_properties.json
 timeline_parquets.7z*
+transformed_data.7z.001
+transformed_data.7z.002
