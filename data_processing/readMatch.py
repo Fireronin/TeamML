@@ -1,12 +1,12 @@
+#%%
 import os
 from tqdm import tqdm
 import lzma
 import json
 import pandas as pd
-
 import math
 
-FOLDER_NAME = 'raw_data/match'
+FOLDER_NAME = '../raw_data/match'
 
 # folder_name = r"C:\Users\nudy1\Downloads\raw_data\timeline"
 files_list = os.listdir(FOLDER_NAME)
@@ -50,6 +50,50 @@ for file in tqdm(files_list):
 
 df = pd.concat(dfs)
 
-df.to_parquet(f"parquets/match_basic.parquet",compression="zstd")
+df.to_parquet(f"../parquets/match_basic.parquet",compression="zstd")
 
-# if __name__ == '__main__':
+#%% Rune lister
+
+runes = set()
+champs = set()
+badMathes = set()
+
+for index, row in df.iterrows():
+    for id in range(1,11):
+        for suffix in ['runeDefense','runeFlex', 'runeOffense', 'perk1', 'perk2', 'perk3', 'perk4', 'perk5', 'perk6']:
+            rune = row[f"{id}_{suffix}"]
+
+            if type(rune) == int:
+                runes.add(float(rune))
+
+            elif math.isnan(rune):
+                badMathes.add(row[f"matchId"])
+            else:
+                runes.add(rune)
+
+        if type(row[f"{id}_championId"]) == int:
+            champs.add(float(row[f"{id}_championId"]))
+        elif type(row[f"{id}_championId"]) == float and math.isnan(row[f"{id}_championId"]):
+
+            badMathes.add(row[f"matchId"])
+        else:
+            champs.add(row[f"{id}_championId"])
+
+print(champs)
+
+print(runes)
+
+rune_dict = {k: v for k, v in zip(list(sorted(runes)), range(1, len(runes) + 1))}
+runes_data = json.dumps(rune_dict)
+
+champs_dict = {k: v for k, v in zip(list(sorted(champs)), range(1, len(champs) + 1))}
+champs_data = json.dumps(champs_dict)
+
+# Write JSON data to a file
+with open('../mapping_data/runes_data.json', 'w') as file:
+    file.write(runes_data)
+
+with open('../mapping_data/champs_data.json', 'w') as file:
+    file.write(champs_data)
+
+print(badMathes)

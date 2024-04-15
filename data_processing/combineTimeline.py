@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 # conbine all files in timeline_parquets in one file
 
-folder_name = "timeline_parquets"
+folder_name = "../timeline_parquets"
 files_list = os.listdir(folder_name)
 dfs = []
 ct = 0
@@ -23,7 +23,7 @@ for file in tqdm(files_list):
         df = pl.concat(dfs)
         #df = df.collect()
         #print(df.shape)
-        df.collect().write_parquet(f"timeline_parquets_chunked/timeline_{ct}.parquet",compression="zstd",compression_level=10,use_pyarrow=True)
+        df.collect().write_parquet(f"../timeline_parquets_chunked/timeline_{ct}.parquet",compression="zstd",compression_level=10,use_pyarrow=True)
         dfs = []
         ct += 1
 # %%
