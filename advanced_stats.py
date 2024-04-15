@@ -40,15 +40,18 @@ def get_stats(files_list, tuple_list,early_stop=-1):
                 for t in tuple_list:
                     stats = t[1](group)
                     states[t[0]] = t[2](stats, states[t[0]])
-                if it==early_stop and early_stop != -1:
-                    break
+                if it>=early_stop and early_stop != -1:
+                    return states
                 it+=1
             
-    post_process_stats = {}    
+    return states
+
+def post_process_stats(states, tuple_list):
+    pps = {}    
     for t in tuple_list:
-        post_process_stats.update(t[3](states[t[0]]))
+        pps.update(t[3](states[t[0]]))
     
-    return post_process_stats
+    return pps
 
 #%%
 
@@ -335,18 +338,19 @@ def gold_advantage_as_win_predictor(game_df):
     wining_team = (game_df['winningTeam'][-1]-100.0)/100.0
     game_df = calculate_seconds(game_df)
     game_df = calculate_prediction(game_df, wining_team)
+    
+    # seconds
     grouped_by_seconds = game_df[["correct","seconds"]].group_by("seconds",maintain_order=True)
-    correct = grouped_by_seconds.sum()["correct"].to_numpy()
-    valid = grouped_by_seconds.count()["count"].to_numpy()
-    bucket_size = game_df['timestamp'][-1]/100
-    #game_df = game_df.with_columns([(( (game_df['timestamp']/bucket_size).floor() ).alias("percentage"))])
+    correct_seconds = grouped_by_seconds.sum()["correct"].to_numpy()
+    valid_seconds = grouped_by_seconds.count()["count"].to_numpy()
+    
+    # percentage
+    bucket_size = game_df['timestamp'][-1]/100 
     buckets_cuts = np.arange(0, 99)*bucket_size
     labels = [str(i) for i in range(100)]
     game_df = game_df.with_columns([game_df["timestamp"].cut(breaks=buckets_cuts,labels=labels).alias("percentage")])
     grouped_by_percentage =  game_df[["correct","percentage"]].group_by("percentage",maintain_order=True)
-
     percentage_df  = grouped_by_percentage.sum().with_columns([grouped_by_percentage.count()["count"]])
-    # itterate over percentage_df and fill the gaps
     to_add_columns = {
         "percentage": [],
         "correct": [],
@@ -365,78 +369,208 @@ def gold_advantage_as_win_predictor(game_df):
     correct_percentage = percentage_df["correct"].to_numpy()
     valid_percentage = percentage_df["count"].to_numpy()
     
+    # raw stamps
+    correct_raw = game_df["correct"].to_numpy()
+    valid_raw = np.ones(len(correct_raw))
+    
+    correct_raw = np.concatenate([correct_raw, np.zeros(10000-len(correct_raw))])
+    valid_raw = np.concatenate([valid_raw, np.zeros(10000-len(valid_raw))])
+    
+    
     return {
-        'correct_gold_predictions': correct,
-        'valid_gold_predictions': valid,
-        'correct_gold_predictions_percentage': correct_percentage,
-        'valid_gold_predictions_percentage': valid_percentage
+        'gb_correct_per_second': correct_seconds,
+        'gb_valid_per_second': valid_seconds,
+        'gb_correct_per_percent': correct_percentage,
+        'gb_valid_per_percent': valid_percentage,
+        'gb_correct_raw': correct_raw,
+        'gb_valid_raw': valid_raw,
     }
 
 def gold_advantage_as_win_predictor_pre_merge(new_stats, state=None):
     if state is None:
         state = {
-            'correct_gold_predictions': np.zeros(60*60),
-            'valid_gold_predictions': np.zeros(60*60),
-            'correct_gold_predictions_percentage': np.zeros(100),
-            'valid_gold_predictions_percentage': np.zeros(100)
+            'gb_correct_per_second': np.zeros(60*60),
+            'gb_valid_per_second': np.zeros(60*60),
+            'gb_correct_per_percent': np.zeros(100),
+            'gb_valid_per_percent': np.zeros(100),
+            'gb_correct_raw': np.zeros(10000),
+            'gb_valid_raw': np.zeros(10000),
         }
-    seconds_length = len(new_stats['correct_gold_predictions'])
-    max_cut = min(len(state['correct_gold_predictions']), seconds_length)
-    state['correct_gold_predictions'][:max_cut] += new_stats['correct_gold_predictions'][:max_cut]
-    state['valid_gold_predictions'][:max_cut] += new_stats['valid_gold_predictions'][:max_cut]
-    state['correct_gold_predictions_percentage'] += new_stats['correct_gold_predictions_percentage']
-    state['valid_gold_predictions_percentage'] += new_stats['valid_gold_predictions_percentage']
+    seconds_length = len(new_stats['gb_correct_per_second'])
+    max_cut = min(len(state['gb_correct_per_second']), seconds_length)
+    state['gb_correct_per_second'][:max_cut] += new_stats['gb_correct_per_second'][:max_cut]
+    state['gb_valid_per_second'][:max_cut] += new_stats['gb_valid_per_second'][:max_cut]
+    state['gb_correct_per_percent'] += new_stats['gb_correct_per_percent']
+    state['gb_valid_per_percent'] += new_stats['gb_valid_per_percent']
+    state['gb_correct_raw'] += new_stats['gb_correct_raw']
+    state['gb_valid_raw'] += new_stats['gb_valid_raw']
     return state
 
 def gold_advantage_as_win_predictor_post_process(state):
-    first_zero = np.where(state['valid_gold_predictions'] == 0)[0][0]
-    state['correct_gold_predictions'] = state['correct_gold_predictions'][:first_zero]
-    state['valid_gold_predictions'] = state['valid_gold_predictions'][:first_zero]
-    state['gold_advantage_win_ratio'] = state['correct_gold_predictions'] / state['valid_gold_predictions']
-    state['valid_gold_predictions'] = state['valid_gold_predictions']
-    state['correct_gold_predictions_percentage'] = state['correct_gold_predictions_percentage'] / state['valid_gold_predictions_percentage']
-    state['valid_gold_predictions_percentage'] = state['valid_gold_predictions_percentage']
+    first_zero = np.where(state['gb_valid_per_second'] == 0)[0][0]
+    state['gb_correct_per_second'] = state['gb_correct_per_second']#[:first_zero]
+    state['gb_valid_per_second'] = state['gb_valid_per_second']#[:first_zero]
+    state['gb_correct_per_second'] = state['gb_correct_per_second'] / state['gb_valid_per_second']
+    state['gb_valid_per_second'] = state['gb_valid_per_second']
+    state['gb_correct_per_percent'] = state['gb_correct_per_percent'] / state['gb_valid_per_percent']
+    state['gb_valid_per_percent'] = state['gb_valid_per_percent']
+    
+    first_zero = np.where(state['gb_valid_raw'] == 0)[0][0]
+    state['gb_correct_raw'] = state['gb_correct_raw'][:first_zero]
+    state['gb_valid_raw'] = state['gb_valid_raw'][:first_zero]
+    state['gb_correct_raw'] = state['gb_correct_raw'] / state['gb_valid_raw']
+    state['gb_valid_raw'] = state['gb_valid_raw']
     
     
-    # draw a graph of gold_advantage_win_ratio
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig.add_trace(
-        go.Scatter(x=np.arange(len(state['correct_gold_predictions_percentage'])), y=state['correct_gold_predictions_percentage'], name='Gold Advantage Win Ratio'),
-        secondary_y=False
-    )
-
-    fig.add_trace(
-        go.Scatter(x=np.arange(len(state['valid_gold_predictions_percentage'])), y=state['valid_gold_predictions_percentage'],name='Valid Gold Predictions'),
-        secondary_y=True
-    )
-
-    fig.update_layout(
-        title_text='Gold Advantage as Win Predictor',
-        xaxis_title_text='Seconds',
-        yaxis_title_text='Win Ratio',
-        yaxis2=dict(title='Valid Gold Predictions', overlaying='y', side='right')
-    )
-
-    fig.show()
+    pairs_of_columns = [
+        ('gb_correct_per_second', 'gb_valid_per_second'),
+        ('gb_correct_per_percent', 'gb_valid_per_percent'),
+        ('gb_correct_raw', 'gb_valid_raw')]
     
-    # save the graph
-    #fig.write_image(os.path.join('stats', 'gold_advantage_win_ratio.png'))
+    titles = [
+        'Gold Advantage Baseline accuracy per second',
+        'Gold Advantage Baseline accuracy per percentage or match time',
+        'Gold Advantage Baseline accuracy per nth timestamp']
     
-
+    x_axis_titles = [
+        'Seconds',
+        'Percentage',
+        'Timestamp']
+    
+    for pair in pairs_of_columns:
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(x=np.arange(len(state[pair[0]])), y=state[pair[0]], name='Correct %'),secondary_y=False)
+        fig.add_trace(go.Scatter(x=np.arange(len(state[pair[1]])), y=state[pair[1]], name='Number of Samples'),secondary_y=True)
+        fig.update_layout(title=titles[pairs_of_columns.index(pair)], 
+                          xaxis_title=x_axis_titles[pairs_of_columns.index(pair)], 
+                          yaxis_title='Win Ratio',
+                          yaxis2=dict(title='Valid Gold Predictions', overlaying='y', side='right'))
+        fig.show()
     
     return state
 
 gold_advantage_as_win_predictor_tuple = ("gold_advantage_as_win_predictor", gold_advantage_as_win_predictor, gold_advantage_as_win_predictor_pre_merge, gold_advantage_as_win_predictor_post_process, None)
+
+#compute mean and std of each column (combined for all games)
+
+def mean_of_all_games(df):
+    counts = []
+    sums = []
+    for col in df.columns:
+        if col == 'matchId':
+            continue
+        counts.append(df[col].len())
+        sums.append(df[col].sum())
+    return {
+        "counts": counts,
+        "sums": sums
+    }
+    
+def mean_of_all_games_pre_merge(new_stats, state=None):
+    if state is None:
+        state = {
+            "counts": np.zeros(len(new_stats["counts"])),
+            "sums": np.zeros(len(new_stats["sums"]))
+        }
+    state["counts"] += new_stats["counts"]
+    state["sums"] += new_stats["sums"]
+    return state
+
+def mean_of_all_games_post_process(state):
+    means = state["sums"] / state["counts"]
+    
+    means_dict = {}
+    i = 0
+    for col in game1.columns:
+        if col == 'matchId':
+            continue
+        means_dict[col] = means[i]
+        i+=1
+        
+    means_dict['matchId'] = None
+    means_df = pl.DataFrame(means_dict)
+    save_path = os.path.join('stats', 'means.csv')
+    means_df.write_csv(save_path)
+    
+    global means_global
+    means_global = means_dict
+    return {
+        "means": means
+    }
+    
+mean_of_all_games_tuple = ("mean_of_all_games", mean_of_all_games, mean_of_all_games_pre_merge, mean_of_all_games_post_process, None)
+
+means_global = [] 
+
+
+# compute std using means_global as mean of each column
+
+def std_of_all_games(df):
+    counts = []
+    sums = []
+    for col in df.columns:
+        if col == 'matchId':
+            continue
+        counts.append(df[col].len())
+        sums.append(((df[col] - means_global[col])**2).sum() )
+    return {
+        "counts": counts,
+        "sums": sums
+    }
+    
+def std_of_all_games_pre_merge(new_stats, state=None):
+    if state is None:
+        state = {
+            "counts": np.zeros(len(new_stats["counts"])),
+            "sums": np.zeros(len(new_stats["sums"]))
+        }
+    state["counts"] += new_stats["counts"]
+    state["sums"] += new_stats["sums"]
+    return state
+
+def std_of_all_games_post_process(state):
+    stds = np.sqrt(state["sums"] / state["counts"])
+    
+    stds_dict = {}
+    i = 0
+    for col in game1.columns:
+        if col == 'matchId':
+            continue
+        stds_dict[col] = stds[i]
+        i+=1
+        
+    stds_dict['matchId'] = None
+    stds_df = pl.DataFrame(stds_dict)
+    save_path = os.path.join('stats', 'stds.csv')
+    stds_df.write_csv(save_path)
+    
+    return {
+        "stds": stds
+    }
+
+std_of_all_games_tuple = ("std_of_all_games", std_of_all_games, std_of_all_games_pre_merge, std_of_all_games_post_process, None)
+
+
 # %%
 # [game_length_and_count_tuple, winning_team_tuple, first_kill_tuple, objective_counters_tuple,gold_advantage_as_win_predictor_tuple]
-post_stats =  get_stats(files_list[:10000], [game_length_and_count_tuple, winning_team_tuple, first_kill_tuple, objective_counters_tuple,gold_advantage_as_win_predictor_tuple],early_stop=-1)
+tuple_list = [game_length_and_count_tuple, winning_team_tuple, first_kill_tuple, objective_counters_tuple,gold_advantage_as_win_predictor_tuple]
 
-#print(post_stats)
+# stats =  get_stats(files_list[:100000], tuple_list,early_stop=-1)
 
+#%%
+
+# post_stats = post_process_stats(stats,tuple_list)
 
 
 # %%
 
+# std and mean
+stop_idx = -1
+mean_stats = get_stats(files_list[:100000], [mean_of_all_games_tuple],early_stop=stop_idx)
+post_mean_stats = post_process_stats(mean_stats,[mean_of_all_games_tuple])
+#%%
+std_stats = get_stats(files_list[:100000], [std_of_all_games_tuple],early_stop=stop_idx)
+post_std_stats = post_process_stats(std_stats,[std_of_all_games_tuple])
 
 
+# %%
