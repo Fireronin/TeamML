@@ -43,8 +43,8 @@ nlayers = 2
 ngame_cont = 120
 nteam_cont = 0
 nplayer_cont = 48
-nitems = 227
-nchampions = 167
+nitems = 245
+nchampions = 164
 nrunes = 70
 game_dim = 50
 team_dim = 0
@@ -61,6 +61,7 @@ class LoLDatasetCache(Dataset):
         self.cached_data = None
         self.cached_targets = None
         self.cached_file_number = -1
+        self.cache_size = -1
     
     def __len__(self):
         return self.n_games
@@ -83,15 +84,16 @@ class LoLDatasetCache(Dataset):
                 padding = torch.zeros((games.shape[0], self.max_len - games.shape[1], games.shape[2]))
                 games = torch.cat((games, padding), 1)
 
-            games[:, :, -1] = games[:, 0, -1].unsqueeze(-1)
+            games[:, :, -1] = games[:, 0, -1].unsqueeze(-1).to(DEVICE)
             X = games[:, :, :-1]
             y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
 
             self.cached_data = X
             self.cached_targets = y
             self.cached_file_number = file_number
+            self.cache_size = games.shape[0]
         
-        return self.cached_data[idx % 1000], self.cached_targets[idx % 1000]
+        return self.cached_data[idx % self.cache_size], self.cached_targets[idx % self.cache_size]
 
 def index_split(n_games):
     indices = np.arange(n_games)
@@ -102,7 +104,7 @@ def index_split(n_games):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-data_stats['n_games'] = 60000
+# data_stats['n_games'] = 60000
 
 dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'])
 train_indices, test_indices = index_split(data_stats['n_games'])
