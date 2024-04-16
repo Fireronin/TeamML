@@ -3,8 +3,8 @@ import json
 from transformer import TransformerModel
 import random
 
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 
 from tqdm import tqdm
 import polars as pl
@@ -29,6 +29,12 @@ SEED = 42
 DATA_FOLDER = 'transformed_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
+
+if not os.path.exists(GRAPHS_FOLDER):
+    os.makedirs(GRAPHS_FOLDER)
+    
+if not os.path.exists(CHECKPOINTS_FOLDER):
+    os.makedirs(CHECKPOINTS_FOLDER)
 
 print(f'Device: {DEVICE}')
 
@@ -105,7 +111,7 @@ with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
 # data_stats['n_games'] = 60000
-
+data_stats['max_len'] += 1
 dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'])
 train_indices, test_indices = index_split(data_stats['n_games'])
 train_dataset = Subset(dataset, train_indices)
@@ -194,6 +200,8 @@ for epoch in tqdm(range(EPOCHS)):
     )
 
     fig = go.Figure(data=[trace0, trace1])
+    if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'loss')):
+        os.makedirs(os.path.join(GRAPHS_FOLDER, 'loss'))
     fig.write_image(os.path.join(GRAPHS_FOLDER, 'loss', f'{epoch}.png'))
 
 
@@ -240,4 +248,6 @@ for epoch in tqdm(range(EPOCHS)):
     )
 
     fig = go.Figure(data=[trace0,trace1])
+    if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'accuracy')):
+        os.makedirs(os.path.join(GRAPHS_FOLDER, 'accuracy'))
     fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{epoch}.png'))
