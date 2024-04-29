@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 BATCH_SIZE = 5000
-ITERATIONS = 25
+ITERATIONS = 3
 model = None
 DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DATA_FOLDER = 'transformed_data'
@@ -100,7 +100,11 @@ class LoLDatasetCache(Dataset):
                 # multiply by 100 to get the percentage then int
                 timestamps = (timestamps * 100).astype(np.int32)
                 if tensor_group.shape[0] > self.k_samples:
-                    sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
+                    #sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
+                    # take first 10 samples
+                    sample_indices = [1]
+
+                    
                     tensor_group = tensor_group[sample_indices]
                     
                     timestamps = timestamps[sample_indices]
@@ -142,11 +146,11 @@ test_dataset = Subset(dataset, test_indices)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-
+k =0 
 for i in range(ITERATIONS):
     it = 0
     for X, y,t in tqdm(train_loader):
-        i+=1
+        k+=1
         X = X.numpy()
         y = y.numpy()
         t = t.numpy()
@@ -188,9 +192,9 @@ for i in range(ITERATIONS):
         y_pr = model.predict(xgb.DMatrix(X))
         accuracies_per_percent = np.zeros(101)
         sample_count = np.zeros(101)
-        for i in range(len(y_pr)):
-            accuracies_per_percent[t[i]] += (y_pr[i] > 0.5).astype(np.float32) == y[i]
-            sample_count[t[i]] += 1
+        for l in range(len(y_pr)):
+            accuracies_per_percent[t[l]] += (y_pr[l] > 0.5).astype(np.float32) == y[l]
+            sample_count[t[l]] += 1
         sample_count[sample_count == 0] = 1
         accuracies_per_percent = accuracies_per_percent / sample_count
         #use plotly to plot the accuracies
@@ -200,12 +204,13 @@ for i in range(ITERATIONS):
         #fig.write_image(os.path.join(GRAPHS_FOLDER, f'accuracy_{i}.png'))
         fig.show()   
             
-        print('Train set MSE itr@{}: {}'.format(i, sklearn.metrics.mean_squared_error(y, y_pr)))
+        print('Train set MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y, y_pr)))
         print('Train set Accuracy at the end: {}'.format(((y_pr>0.5).astype(np.float32) ==  y).mean()))
         
-        if i%10 == 1:
+        if k%10 == 1:
             y_te = []
             y_pr = []
+            t_combined = []
             it2 = 0
             for X, y,t in test_loader:
                 it2+=1
@@ -224,17 +229,18 @@ for i in range(ITERATIONS):
                 y = y[~mask]
                 t = t[~mask]
                 
-
+                t_combined.append(t)
                 y_te.append(y)
                 y_pr.append(model.predict(xgb.DMatrix(X)))
             
+            t_combined = np.concatenate(t_combined)
             y_te = np.concatenate(y_te)
             y_pr = np.concatenate(y_pr)
-            accuracies_per_percent = np.zeros(101)
+            accuracies_per_percent = np.zeros(101) 
             sample_count = np.zeros(101)
-            for i in range(len(y_pr)):
-                accuracies_per_percent[t[i]] += (y_pr[i] > 0.5).astype(np.float32) == y[i]
-                sample_count[t[i]] += 1
+            for l in range(len(y_pr)):
+                accuracies_per_percent[t_combined[l]] += (y_pr[l] > 0.5).astype(np.float32) == y_te[l]
+                sample_count[t_combined[l]] += 1
             sample_count[sample_count == 0] = 1
             accuracies_per_percent = accuracies_per_percent / sample_count
             #use plotly to plot the accuracies
@@ -243,11 +249,30 @@ for i in range(ITERATIONS):
             fig.update_layout(title='VAL SET Accuracy per time percentage ')
             #fig.write_image(os.path.join(GRAPHS_FOLDER, f'accuracy_{i}.png'))
             fig.show()   
-            print('VAL SET MSE itr@{}: {}'.format(i, sklearn.metrics.mean_squared_error(y_te, y_pr)))
-            print('VAL SET Accuracy itr@{}: {}'.format(i, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
+            print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te, y_pr)))
+            print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
             # save model
-            model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_{i}.xgb'))
+  
+y_te = np.concatenate(y_te)
+y_pr = np.concatenate(y_pr)
+accuracies_per_percent = np.zeros(101) 
+sample_count = np.zeros(101)
+for l in range(len(y_pr)):
+    accuracies_per_percent[t_combined[l]] += (y_pr[l] > 0.5).astype(np.float32) == y_te[l]
+    sample_count[t_combined[l]] += 1
+sample_count[sample_count == 0] = 1
+accuracies_per_percent = accuracies_per_percent / sample_count
+#use plotly to plot the accuracies
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=np.arange(101), y=accuracies_per_percent))
+fig.update_layout(title='VAL SET Accuracy per time percentage ')
+#fig.write_image(os.path.join(GRAPHS_FOLDER, f'accuracy_{i}.png'))
+fig.show()   
+print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te, y_pr)))
+print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
+# save model
+model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.xgb'))
 
-y_pr = model.predict(xgb.DMatrix(x_te))
-print('MSE at the end: {}'.format(sklearn.metrics.mean_squared_error(y_te, y_pr)))
-print('Accuracy at the end: {}'.format(((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
+# y_pr = model.predict(xgb.DMatrix(x_te))
+# print('MSE at the end: {}'.format(sklearn.metrics.mean_squared_error(y_te, y_pr)))
+# print('Accuracy at the end: {}'.format(((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
