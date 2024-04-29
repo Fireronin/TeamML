@@ -102,7 +102,7 @@ class LoLDatasetCache(Dataset):
                 if tensor_group.shape[0] > self.k_samples:
                     #sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
                     # take first 10 samples
-                    sample_indices = [1]
+                    sample_indices = [0]
 
                     
                     tensor_group = tensor_group[sample_indices]
