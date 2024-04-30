@@ -13,8 +13,8 @@ from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
 import plotly.express as px
 
-BATCH_SIZE = 5000
-ITERATIONS = 3
+BATCH_SIZE = 1500000
+ITERATIONS = 1
 model = None
 DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DATA_FOLDER = 'transformed_data'
@@ -139,7 +139,7 @@ def index_split(n_games):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],100)
+dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],1)
 train_indices, test_indices = index_split(data_stats['n_games'])
 train_dataset = Subset(dataset, train_indices)
 test_dataset = Subset(dataset, test_indices)
@@ -253,6 +253,28 @@ for i in range(ITERATIONS):
             print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
             # save model
   
+y_te = []
+y_pr = []
+t_combined = []
+for X, y,t in test_loader:
+    X = X.numpy()
+    y = y.numpy()
+    t = t.numpy()
+    
+    X = X.reshape(X.shape[0] * X.shape[1], X.shape[2])
+    y = y.reshape(y.shape[0] * y.shape[1])
+    t = t.reshape(t.shape[0] * t.shape[1])
+    
+    mask = np.all(X == 0, axis=1)
+    X = X[~mask]
+    y = y[~mask]
+    t = t[~mask]
+    
+    t_combined.append(t)
+    y_te.append(y)
+    y_pr.append(model.predict(xgb.DMatrix(X)))
+
+t_combined = np.concatenate(t_combined)
 y_te = np.concatenate(y_te)
 y_pr = np.concatenate(y_pr)
 accuracies_per_percent = np.zeros(101) 
@@ -271,8 +293,15 @@ fig.show()
 print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te, y_pr)))
 print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
 # save model
-model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.xgb'))
+# save model
+model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.json'))
 
 # y_pr = model.predict(xgb.DMatrix(x_te))
 # print('MSE at the end: {}'.format(sklearn.metrics.mean_squared_error(y_te, y_pr)))
 # print('Accuracy at the end: {}'.format(((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
+
+# show feature importance
+xgb.plot_importance(model)
+
+# print number of features
+print('Number of features: {}'.format(len(model.get_score(importance_type='weight'))))
