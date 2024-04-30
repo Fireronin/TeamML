@@ -1,8 +1,7 @@
 #%%
 from transformer import TransformerModel
 
-from dotenv import load_dotenv
-load_dotenv()
+
 
 from tqdm import tqdm
 import polars as pl
