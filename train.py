@@ -1,20 +1,18 @@
-#%%
 import json
 from transformer import TransformerModel
 import random
 
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 
 from tqdm import tqdm
 import polars as pl
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, random_split, Subset
+from torch.utils.data import Dataset, DataLoader, Subset
 from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
-import plotly.express as px
 import lovely_tensors as lt
 import numpy as np
 import os
@@ -26,7 +24,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 BATCH_SIZE = 6
 SEED = 42
 
-DATA_FOLDER = 'transformed_data'
+DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
 
@@ -40,13 +38,10 @@ print(f'Device: {DEVICE}')
 
 random.seed(SEED)
 
-# 58 per player, 48 + 1 + 9
-# 227 items (?)
-# 70 runes (?)
 output_dim = 1
 nhead = 10
 nlayers = 2
-ngame_cont = 120
+ngame_cont = 126
 nteam_cont = 0
 nplayer_cont = 48
 nitems = 245
@@ -110,14 +105,14 @@ def index_split(n_games):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-# data_stats['n_games'] = 60000
+# data_stats['n_games'] = 200
 data_stats['max_len'] += 1
 dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'])
 train_indices, test_indices = index_split(data_stats['n_games'])
 train_dataset = Subset(dataset, train_indices)
 test_dataset = Subset(dataset, test_indices)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 model = TransformerModel(
     output_dim, 
@@ -156,13 +151,13 @@ for epoch in tqdm(range(EPOCHS)):
     for X, y in tqdm(train_loader, leave=False):
         X = X.to(DEVICE)
         y = y.to(DEVICE)
-        
+            
         # zero the gradients
         optimizer.zero_grad()
 
         # forward pass
         y_pred = model(X)
-        
+            
         # compute the loss
         loss = criterion(y_pred, y)
 
@@ -180,7 +175,6 @@ for epoch in tqdm(range(EPOCHS)):
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        # Include any other variables that need to be saved
     }, os.path.join(CHECKPOINTS_FOLDER, f'checkpoint_{epoch}.pth'))
 
 
@@ -215,18 +209,21 @@ for epoch in tqdm(range(EPOCHS)):
         X = X.to(DEVICE)
         y = y.to(DEVICE)
 
-        y = y.squeeze().detach().cpu().numpy()
-        y_pred = model(X).squeeze().detach().cpu().numpy()
+        y = y.squeeze(-1).detach().cpu().numpy()
+        y_pred = model(X).squeeze(-1).detach().cpu().numpy()
         X = X.detach().cpu().numpy()
 
         y_pred[y_pred >= 0] = 1
         y_pred[y_pred < 0] = 0 
 
-        game_len = np.where(X[:, :,-1] > 0)[1][-1] + 1
-        max_training_len = max(max_training_len, game_len)
         accuracy = (y_pred == y)
-        accuracy_per_timestep[:game_len] += accuracy[:game_len]
-        added_preds[:game_len] += 1
+
+        for game_X, game_accuracy in zip(X, accuracy): 
+            nonzero = np.nonzero(game_X[:,-10])
+            game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
+            max_training_len = max(max_training_len, game_len)
+            accuracy_per_timestep[:game_len] += game_accuracy[:game_len]
+            added_preds[:game_len] += 1
         
     accuracy_per_timestep = accuracy_per_timestep[:max_training_len]
     added_preds = added_preds[:max_training_len]

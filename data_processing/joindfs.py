@@ -22,8 +22,8 @@ for file in tqdm(files_list):
 
     df = pl.scan_parquet(os.path.join(folder_name, file))
     # Item lister
-    items =  df.select(["itemId"]).unique().collect()
-    for row in df.iter_rows():
+    items_df =  df.select(["itemId"]).unique().collect()
+    for row in items_df.iter_rows():
         items.add(row[0])
 
 

@@ -63,15 +63,18 @@ for file in tqdm(files_list):
     for id in range(1,11):
         for suffix in ['runeDefense','runeFlex', 'runeOffense', 'perk1', 'perk2', 'perk3', 'perk4', 'perk5', 'perk6']:
             col = df.get_column(f"{id}_{suffix}")
-            col = col.map_elements(lambda t: runes[str(float(t))])
+            # col = col.map_elements(lambda t: runes[str(float(t))])
+            col = col.cast(pl.Float32).cast(pl.String).replace(runes).cast(pl.Int32)
             df = df.with_columns(col.alias(f"{id}_{suffix}"))
 
         col = df.get_column(f"{id}_championId")
-        col = col.map_elements(lambda t: champs[str(float(t))])
+        # col = col.map_elements(lambda t: champs[str(float(t))])
+        col = col.cast(pl.Float32).cast(pl.String).replace(champs).cast(pl.Int32)
         df = df.with_columns(col.alias(f"{id}_championId"))
 
     col = df.get_column(f"itemId")
-    col = col.map_elements(lambda t: items[str(t)])
+    # col = col.map_elements(lambda t: items[str(t)])
+    col = col.cast(pl.String).replace(items).cast(pl.Int32)
     df = df.with_columns(col.alias(f"itemId"))
 
     df = df.to_dummies(cols_to_one_hot)

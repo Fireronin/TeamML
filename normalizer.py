@@ -1,35 +1,8 @@
-#%%
-from transformer import TransformerModel
-
-
-
-from tqdm import tqdm
 import polars as pl
-import torch
-import torch.optim as optim
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, random_split
-from torch.nn.utils.rnn import pad_sequence
-import plotly.graph_objects as go
-import plotly.express as px
-import lovely_tensors as lt
-import numpy as np
 import os
-import gc
 import json
 
-lt.monkey_patch()
-
-EPOCHS = 100
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# DEVICE = 'cpu'
-BATCH_SIZE = 8
-
-DATA_FOLDER = 'transformed_data'
-GRAPHS_FOLDER = 'training_graphs'
-CHECKPOINTS_FOLDER = 'checkpoints'
-
-
+DATA_FOLDER = 'filtered_data'
 
 files_list = os.listdir(DATA_FOLDER)
 
