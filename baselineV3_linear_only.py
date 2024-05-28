@@ -12,8 +12,9 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
 import plotly.express as px
+from sklearn.linear_model import LinearRegression
 
-BATCH_SIZE = 1500000
+BATCH_SIZE = 100000
 ITERATIONS = 1
 model = None
 DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,46 +28,6 @@ if not os.path.exists(GRAPHS_FOLDER):
 if not os.path.exists(CHECKPOINTS_FOLDER):
     os.makedirs(CHECKPOINTS_FOLDER)
 
-# class LoLDatasetCache(Dataset):
-#     def __init__(self, max_len, n_games):
-#         self.max_len = max_len
-#         self.n_games = n_games
-#         self.cached_data = None
-#         self.cached_targets = None
-#         self.cached_file_number = -1
-#         self.cache_size = -1
-    
-#     def __len__(self):
-#         return self.n_games
-    
-#     def __getitem__(self, idx):
-#         file_number = int(idx // 1000)
-#         if self.cached_file_number != file_number:
-#             file_name =  f'timeline_{file_number}.parquet'
-#             df = pl.read_parquet(os.path.join(DATA_FOLDER,file_name))
-
-#             grouped = df.group_by(['matchId'])
-#             games = []
-#             for _, group in grouped:
-#                 group = group.drop('matchId')
-#                 games.append(torch.from_numpy(group.to_numpy()))
-            
-#             games = pad_sequence(games, batch_first=True).to(torch.float)
-
-#             if games.shape[1] != self.max_len:
-#                 padding = torch.zeros((games.shape[0], self.max_len - games.shape[1], games.shape[2]))
-#                 games = torch.cat((games, padding), 1)
-
-#             games[:, :, -1] = games[:, 0, -1].unsqueeze(-1).to(DEVICE)
-#             X = games[:, :, :-1]
-#             y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
-
-#             self.cached_data = X
-#             self.cached_targets = y
-#             self.cached_file_number = file_number
-#             self.cache_size = games.shape[0]
-        
-#         return self.cached_data[idx % self.cache_size], self.cached_targets[idx % self.cache_size]
 
 class LoLDatasetCache(Dataset):
     def __init__(self, max_len, n_games, k_samples):
@@ -100,9 +61,9 @@ class LoLDatasetCache(Dataset):
                 # multiply by 100 to get the percentage then int
                 timestamps = (timestamps * 100).astype(np.int32)
                 if tensor_group.shape[0] > self.k_samples:
-                    #sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
+                    sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
                     # take first 10 samples
-                    sample_indices = [0]
+                    #sample_indices = [0]
 
                     
                     tensor_group = tensor_group[sample_indices]
@@ -147,6 +108,7 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 k =0 
+model = LinearRegression()
 for i in range(ITERATIONS):
     it = 0
     for X, y,t in tqdm(train_loader):
@@ -167,31 +129,17 @@ for i in range(ITERATIONS):
         y = y[~mask]
         t = t[~mask]
         
+        
+        
+        
         print("SHAPES: ",X.shape, y.shape)
-        param = {'objective': 'binary:logistic',  # Objective is binary classification
-        'booster':'dart',
-        'max_depth': 15,  # Maximum depth of a tree. Increasing this value will make the model more complex and more likely to overfit.
-        'learning_rate': 0.1,  # Step size shrinkage used in update to prevents overfitting. After each boosting step, we can directly get the weights of new features.
-        'subsample': 0.2,  # Subsample ratio of the training instances. Setting it to 0.5 means that XGBoost would randomly sample half of the training data prior to growing trees. and this will prevent overfitting.
-        'colsample_bytree': 0.7,  # Subsample ratio of columns when constructing each tree.
-        'n_estimators': 100,  # Number of trees to fit.
-        'reg_alpha': 0.01,  # L1 regularization term on weights. Increasing this value will make model more conservative.
-        'reg_lambda': 1,  # L2 regularization term on weights. Increasing this value will make model more conservative.
-        'scale_pos_weight': 1,  # Control the balance of positive and negative weights, useful for unbalanced classes.
-        'random_state': 42,  # Random number seed. It can be used for producing reproducible results and also for parameter tuning.
-        'eval_metric': 'logloss',  # Evaluation metrics for validation data, a default metric will be assigned according to objective (rmse for regression, and error for classification, mean average precision for ranking)
-        "device": 'cpu',
-        'process_type': 'default' if model is None else 'default',
-        'refresh_leaf': True,
-        }
-        # Train the model
-        model = xgb.train(param, dtrain=xgb.DMatrix(X, label=y), xgb_model=model)
+        model.fit(X, y)
         # 
         
         
         # prededict on train set
         print('Predicting on train set')
-        y_pr = model.predict(xgb.DMatrix(X))
+        y_pr = model.predict(X)
         accuracies_per_percent = np.zeros(101)
         sample_count = np.zeros(101)
         for l in range(len(y_pr)):
@@ -233,7 +181,7 @@ for i in range(ITERATIONS):
                 
                 t_combined.append(t)
                 y_te.append(y)
-                y_pr.append(model.predict(xgb.DMatrix(X)))
+                y_pr.append(model.predict(X))
             
             t_combined = np.concatenate(t_combined)
             y_te = np.concatenate(y_te)
@@ -254,7 +202,7 @@ for i in range(ITERATIONS):
             print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te, y_pr)))
             print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
             # save model
-  
+#%% 
 y_te = []
 y_pr = []
 t_combined = []
@@ -274,7 +222,7 @@ for X, y,t in test_loader:
     
     t_combined.append(t)
     y_te.append(y)
-    y_pr.append(model.predict(xgb.DMatrix(X)))
+    y_pr.append(model.predict(X))
 
 t_combined = np.concatenate(t_combined)
 y_te = np.concatenate(y_te)
@@ -307,37 +255,4 @@ xgb.plot_importance(model)
 
 # print number of features
 print('Number of features: {}'.format(len(model.get_score(importance_type='weight'))))
-
-#%%
-import xgboost as xgb
-
-# load model
-model = xgb.Booster()
-CHECKPOINTS_FOLDER = 'checkpoints'
-model.load_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.json'))
-
-xgb.plot_importance(model)
-
-# Print number of features
-print('Number of features: {}'.format(len(model.get_score(importance_type='weight'))))
-
-# Get feature importance scores
-importance_scores = model.get_score(importance_type='weight')
-
-# Sort features by importance
-sorted_features = sorted(importance_scores.items(), key=lambda item: item[1], reverse=True)
-
-# Print top 10 features
-print("Top 10 most important features:")
-for feature, score in sorted_features[:10]:
-    print(f"{feature}: {score:.2f}")
-
-# create a csv file with the feature importance scores
-import csv
-
-with open('feature_importance.csv', 'w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(['Feature', 'Importance'])
-    for feature, score in sorted_features:
-        writer.writerow([feature, score])
-#%%
+# %%
