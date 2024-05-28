@@ -20,12 +20,15 @@ DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DATA_FOLDER = 'transformed_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
+SEED = 42
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
     
 if not os.path.exists(CHECKPOINTS_FOLDER):
     os.makedirs(CHECKPOINTS_FOLDER)
+
+random.seed(SEED)
 
 # class LoLDatasetCache(Dataset):
 #     def __init__(self, max_len, n_games):
@@ -146,7 +149,7 @@ test_dataset = Subset(dataset, test_indices)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-k =0 
+k =0
 for i in range(ITERATIONS):
     it = 0
     for X, y,t in tqdm(train_loader):
@@ -289,9 +292,9 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(x=np.arange(101), y=accuracies_per_percent))
 fig.update_layout(title='VAL SET Accuracy per time percentage ')
 #fig.write_image(os.path.join(GRAPHS_FOLDER, f'accuracy_{i}.png'))
-fig.show()   
+fig.show()
 print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te, y_pr)))
-print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
+print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr > 0.5).astype(np.float32) ==  y_te).mean()))
 # save model
 # save model
 model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.json'))
