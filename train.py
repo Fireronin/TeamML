@@ -27,6 +27,7 @@ SEED = 42
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
+CHECKPOINT_FILE = 'checkpoint_3.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -141,7 +142,19 @@ print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.re
 optimizer = optim.Adam(model.parameters())
 criterion = nn.BCEWithLogitsLoss()
 
+checkpoint_epoch = -1
+
+if CHECKPOINT_FILE is not None:
+    checkpoint = torch.load(os.path.join(CHECKPOINTS_FOLDER, CHECKPOINT_FILE))
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    checkpoint_epoch = checkpoint['epoch']
+
 for epoch in tqdm(range(EPOCHS)):
+    if epoch <= checkpoint_epoch:
+        continue
+    
     # set model to train mode
     model.train()
 
