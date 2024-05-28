@@ -1,3 +1,4 @@
+from tqdm import tqdm
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, Subset
 import polars as pl
@@ -150,7 +151,7 @@ max_training_len = 0
 # X: (Batch, Game_length, Columns)
 # y: (Batch, Game_length, 1)
 # t: (Batch, Game_length)
-for X, y, t in test_loader:
+for X, y, t in tqdm(test_loader):
     X = X.to(DEVICE)
     y = y.to(DEVICE)
 
