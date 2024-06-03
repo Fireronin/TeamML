@@ -23,11 +23,12 @@ EPOCHS = 10
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 BATCH_SIZE = 6
 SEED = 42
+EVALUATE = False
 
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_3.pth'
+CHECKPOINT_FILE = 'checkpoint_4.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -211,53 +212,53 @@ for epoch in tqdm(range(EPOCHS)):
         os.makedirs(os.path.join(GRAPHS_FOLDER, 'loss'))
     fig.write_image(os.path.join(GRAPHS_FOLDER, 'loss', f'{epoch}.png'))
 
+    if EVALUATE:
+        model.eval()
 
-    model.eval()
+        accuracy_per_timestep = np.zeros(data_stats['max_len'])
+        added_preds = np.zeros(data_stats['max_len'])
 
-    accuracy_per_timestep = np.zeros(data_stats['max_len'])
-    added_preds = np.zeros(data_stats['max_len'])
+        max_training_len = 0
+        for X, y in test_loader:
+            X = X.to(DEVICE)
+            y = y.to(DEVICE)
 
-    max_training_len = 0
-    for X, y in test_loader:
-        X = X.to(DEVICE)
-        y = y.to(DEVICE)
+            y = y.squeeze(-1).detach().cpu().numpy()
+            y_pred = model(X).squeeze(-1).detach().cpu().numpy()
+            X = X.detach().cpu().numpy()
 
-        y = y.squeeze(-1).detach().cpu().numpy()
-        y_pred = model(X).squeeze(-1).detach().cpu().numpy()
-        X = X.detach().cpu().numpy()
+            y_pred[y_pred >= 0] = 1
+            y_pred[y_pred < 0] = 0 
 
-        y_pred[y_pred >= 0] = 1
-        y_pred[y_pred < 0] = 0 
+            accuracy = (y_pred == y)
 
-        accuracy = (y_pred == y)
+            for game_X, game_accuracy in zip(X, accuracy): 
+                nonzero = np.nonzero(game_X[:,-10])
+                game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
+                max_training_len = max(max_training_len, game_len)
+                accuracy_per_timestep[:game_len] += game_accuracy[:game_len]
+                added_preds[:game_len] += 1
+            
+        accuracy_per_timestep = accuracy_per_timestep[:max_training_len]
+        added_preds = added_preds[:max_training_len]
 
-        for game_X, game_accuracy in zip(X, accuracy): 
-            nonzero = np.nonzero(game_X[:,-10])
-            game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
-            max_training_len = max(max_training_len, game_len)
-            accuracy_per_timestep[:game_len] += game_accuracy[:game_len]
-            added_preds[:game_len] += 1
-        
-    accuracy_per_timestep = accuracy_per_timestep[:max_training_len]
-    added_preds = added_preds[:max_training_len]
+        accuracy_per_timestep = accuracy_per_timestep / added_preds
 
-    accuracy_per_timestep = accuracy_per_timestep / added_preds
+        trace0 = go.Scatter(
+            y=accuracy_per_timestep,
+            mode='lines',
+            name='Accuracy'
+        )
 
-    trace0 = go.Scatter(
-        y=accuracy_per_timestep,
-        mode='lines',
-        name='Accuracy'
-    )
+        added_preds_normalized = added_preds / added_preds.max()
 
-    added_preds_normalized = added_preds / added_preds.max()
+        trace1 = go.Scatter(
+            y=added_preds_normalized,
+            mode='lines',
+            name='Number of games'
+        )
 
-    trace1 = go.Scatter(
-        y=added_preds_normalized,
-        mode='lines',
-        name='Number of games'
-    )
-
-    fig = go.Figure(data=[trace0,trace1])
-    if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'accuracy')):
-        os.makedirs(os.path.join(GRAPHS_FOLDER, 'accuracy'))
-    fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{epoch}.png'))
+        fig = go.Figure(data=[trace0,trace1])
+        if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'accuracy')):
+            os.makedirs(os.path.join(GRAPHS_FOLDER, 'accuracy'))
+        fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{epoch}.png'))

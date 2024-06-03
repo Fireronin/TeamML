@@ -10,14 +10,20 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
 
+from dotenv import load_dotenv
+load_dotenv()
+
 BATCH_SIZE = 6
 SEED = 42
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# DEVICE = 'cpu'
+
+print(f'Device: {DEVICE}')
 
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'evaluation_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_3.pth'
+CHECKPOINT_FILE = 'checkpoint_5.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -83,7 +89,7 @@ class LoLDatasetCache(Dataset):
 
             timestamps_per_game = pad_sequence(timestamps_per_game, batch_first=True, padding_value=100).to(torch.int).to(DEVICE)
             if timestamps_per_game.shape[1] != self.max_len:
-                padding = torch.ones((timestamps_per_game.shape[0], self.max_len - timestamps_per_game.shape[1])).to(torch.int) * 100
+                padding = torch.ones((timestamps_per_game.shape[0], self.max_len - timestamps_per_game.shape[1])).to(torch.int).to(DEVICE) * 100
                 timestamps_per_game = torch.cat((timestamps_per_game, padding), 1)
 
             games[:, :, -1] = games[:, 0, -1].unsqueeze(-1).to(DEVICE)
@@ -135,9 +141,11 @@ model = TransformerModel(
     dropout
 ).to(DEVICE)
 
+epoch = 0
 if CHECKPOINT_FILE is not None:
     checkpoint = torch.load(os.path.join(CHECKPOINTS_FOLDER, CHECKPOINT_FILE))
     model.load_state_dict(checkpoint['model_state_dict'])
+    epoch = checkpoint['epoch']
 
 model.eval()
 
@@ -166,17 +174,18 @@ for X, y, t in tqdm(test_loader):
 
     accuracy = (y_pred == y)
 
-    for game_X, game_accuracy, timestamps in zip(X, accuracy, t): 
-        nonzero = np.nonzero(game_X[:,-10])
-        game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
 
-        max_training_len = max(max_training_len, game_len)
+    for game_X, game_accuracy, timestamps in zip(X, accuracy, t): 
+        # nonzero = np.nonzero(game_X[:,-10])
+        # game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
+
+        # max_training_len = max(max_training_len, game_len)
 
         # timestamps = timestamps // np.max(timestamps)
 
         for acc, timestamp in zip(game_accuracy, timestamps):
             accuracy_per_percent[timestamp] += acc
-            percentage_samples += 1
+            percentage_samples[timestamp] += 1
 
         # accuracy_per_timestep[:game_len] += game_accuracy[:game_len]
 
@@ -188,7 +197,7 @@ for X, y, t in tqdm(test_loader):
 accuracy_per_percent = accuracy_per_percent / percentage_samples
 
 trace0 = go.Scatter(
-    y=accuracy_per_timestep,
+    y=accuracy_per_percent,
     mode='lines',
     name='Accuracy'
 )
@@ -202,6 +211,6 @@ trace0 = go.Scatter(
 # )
 
 fig = go.Figure(data=[trace0])
-if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'accuracy')):
-    os.makedirs(os.path.join(GRAPHS_FOLDER, 'accuracy'))
-fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{3}.png'))
+if not os.path.exists(GRAPHS_FOLDER):
+    os.makedirs(GRAPHS_FOLDER)
+fig.write_image(os.path.join(GRAPHS_FOLDER, f'{epoch}.png'))

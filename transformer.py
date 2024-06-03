@@ -9,6 +9,7 @@ class TransformerModel(nn.Module):
         self.model_type = 'Transformer'
         self.src_mask = None
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # device = 'cpu'
 
         self.mean = torch.tensor(mean).to(device)
         self.std = torch.tensor(std).to(device)
