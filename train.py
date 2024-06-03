@@ -1,34 +1,30 @@
 import json
-from transformer import TransformerModel
-import random
-
-from dotenv import load_dotenv
-load_dotenv()
-
+from dataset import get_loaders
+from transformer import get_model
 from tqdm import tqdm
-import polars as pl
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, Subset
-from torch.nn.utils.rnn import pad_sequence
 import plotly.graph_objects as go
 import lovely_tensors as lt
 import numpy as np
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 lt.monkey_patch()
 
-EPOCHS = 10
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-BATCH_SIZE = 6
-SEED = 42
-EVALUATE = False
 
+print(f'Device: {DEVICE}')
+
+EPOCHS = 10
+EVALUATE = False
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_4.pth'
+CHECKPOINT_FILE = 'checkpoint_5.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -36,109 +32,12 @@ if not os.path.exists(GRAPHS_FOLDER):
 if not os.path.exists(CHECKPOINTS_FOLDER):
     os.makedirs(CHECKPOINTS_FOLDER)
 
-print(f'Device: {DEVICE}')
-
-random.seed(SEED)
-
-output_dim = 1
-nhead = 10
-nlayers = 2
-ngame_cont = 126
-nteam_cont = 0
-nplayer_cont = 48
-nitems = 245
-nchampions = 164
-nrunes = 70
-game_dim = 50
-team_dim = 0
-player_dim = 30
-item_dim = 20
-champion_dim = 30
-runes_dim = 5
-dropout = 0.1
-    
-class LoLDatasetCache(Dataset):
-    def __init__(self, max_len, n_games):
-        self.max_len = max_len
-        self.n_games = n_games
-        self.cached_data = None
-        self.cached_targets = None
-        self.cached_file_number = -1
-        self.cache_size = -1
-    
-    def __len__(self):
-        return self.n_games
-    
-    def __getitem__(self, idx):
-        file_number = int(idx // 1000)
-        if self.cached_file_number != file_number:
-            file_name =  f'timeline_{file_number}.parquet'
-            df = pl.read_parquet(os.path.join(DATA_FOLDER,file_name))
-
-            grouped = df.group_by(['matchId'])
-            games = []
-            for _, group in grouped:
-                group = group.drop('matchId')
-                games.append(torch.from_numpy(group.to_numpy()))
-            
-            games = pad_sequence(games, batch_first=True).to(torch.float)
-
-            if games.shape[1] != self.max_len:
-                padding = torch.zeros((games.shape[0], self.max_len - games.shape[1], games.shape[2]))
-                games = torch.cat((games, padding), 1)
-
-            games[:, :, -1] = games[:, 0, -1].unsqueeze(-1).to(DEVICE)
-            X = games[:, :, :-1]
-            y = (games[:, :, -1] / 100.0 - 1).unsqueeze(-1)
-
-            self.cached_data = X
-            self.cached_targets = y
-            self.cached_file_number = file_number
-            self.cache_size = games.shape[0]
-        
-        return self.cached_data[idx % self.cache_size], self.cached_targets[idx % self.cache_size]
-
-def index_split(n_games):
-    indices = np.arange(n_games)
-    random.shuffle(indices)
-    split_index = int(n_games // 1.1111111)
-    return sorted(indices[:split_index]),sorted(indices[split_index:])
-
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-# data_stats['n_games'] = 200
-data_stats['max_len'] += 1
-dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'])
-train_indices, test_indices = index_split(data_stats['n_games'])
-train_dataset = Subset(dataset, train_indices)
-test_dataset = Subset(dataset, test_indices)
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+train_loader, test_loader = get_loaders(data_stats['max_len'], data_stats['n_games'], DATA_FOLDER, DEVICE)
 
-model = TransformerModel(
-    output_dim, 
-    nhead, 
-    nlayers,
-    ngame_cont, 
-    nteam_cont, 
-    nplayer_cont, 
-    nitems, 
-    nchampions, 
-    nrunes, 
-    game_dim, 
-    team_dim, 
-    player_dim, 
-    item_dim, 
-    champion_dim, 
-    runes_dim,
-    data_stats['mean'],
-    data_stats['std'],
-    dropout
-).to(DEVICE)
-
-# print number of parameters
-print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+model = get_model(data_stats['mean'], data_stats['std'], DEVICE)
 
 optimizer = optim.Adam(model.parameters())
 criterion = nn.BCEWithLogitsLoss()
