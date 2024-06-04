@@ -17,7 +17,7 @@ print(f'Device: {DEVICE}')
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'evaluation_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_5.pth'
+CHECKPOINT_FILE = 'checkpoint_4_test.pth'
 
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
@@ -36,7 +36,12 @@ accuracy_per_timestep = np.zeros(data_stats['max_len'])
 accuracy_per_percent = np.zeros(101)
 percentage_samples = np.zeros(101)
 
+it = 0
 for X, y, t in tqdm(test_loader):
+    it += 1
+    if it >= 100:
+        break
+
     X = X.to(DEVICE)
     y = y.to(DEVICE)
 
@@ -69,4 +74,4 @@ trace0 = go.Scatter(
 fig = go.Figure(data=[trace0])
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
-fig.write_image(os.path.join(GRAPHS_FOLDER, f'{epoch}.png'))
+fig.write_image(os.path.join(GRAPHS_FOLDER, f'{epoch}_test.png'))

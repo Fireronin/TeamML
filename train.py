@@ -19,12 +19,12 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 print(f'Device: {DEVICE}')
 
-EPOCHS = 10
+EPOCHS = 20
 EVALUATE = False
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_5.pth'
+CHECKPOINT_FILE = 'checkpoint_9.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -103,7 +103,7 @@ for epoch in tqdm(range(EPOCHS)):
         x = [0, len(losses)-1],
         y = [mean_loss, mean_loss],
         mode = 'lines',
-        name = f'Mean Loss: {mean_loss:.2f}'
+        name = f'Mean Loss: {mean_loss:.3f}'
     )
 
     fig = go.Figure(data=[trace0, trace1])
