@@ -20,11 +20,11 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {DEVICE}')
 
 EPOCHS = 20
-EVALUATE = False
+EVALUATE = True
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_9.pth'
+CHECKPOINT_FILE = None
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -35,7 +35,7 @@ if not os.path.exists(CHECKPOINTS_FOLDER):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-train_loader, test_loader = get_loaders(data_stats['max_len'], data_stats['n_games'], DATA_FOLDER, DEVICE)
+train_loader, test_loader = get_loaders(data_stats['max_len'], data_stats['n_games'], DATA_FOLDER, DEVICE, calculate_timestamps=True)
 
 model = get_model(data_stats['mean'], data_stats['std'], DEVICE)
 
@@ -61,7 +61,7 @@ for epoch in tqdm(range(EPOCHS)):
     # create a list to store the losses
     losses = []
     # loop over the data
-    for X, y in tqdm(train_loader, leave=False):
+    for X, y, _ in tqdm(train_loader, leave=False):
         X = X.to(DEVICE)
         y = y.to(DEVICE)
             
@@ -114,11 +114,10 @@ for epoch in tqdm(range(EPOCHS)):
     if EVALUATE:
         model.eval()
 
-        accuracy_per_timestep = np.zeros(data_stats['max_len'])
-        added_preds = np.zeros(data_stats['max_len'])
+        accuracy_per_percent = np.zeros(101)
+        percentage_samples = np.zeros(101)
 
-        max_training_len = 0
-        for X, y in test_loader:
+        for X, y, t in tqdm(test_loader, leave=False):
             X = X.to(DEVICE)
             y = y.to(DEVICE)
 
@@ -126,38 +125,29 @@ for epoch in tqdm(range(EPOCHS)):
             y_pred = model(X).squeeze(-1).detach().cpu().numpy()
             X = X.detach().cpu().numpy()
 
+            t = t.detach().cpu().numpy()
+
             y_pred[y_pred >= 0] = 1
             y_pred[y_pred < 0] = 0 
 
             accuracy = (y_pred == y)
 
-            for game_X, game_accuracy in zip(X, accuracy): 
-                nonzero = np.nonzero(game_X[:,-10])
-                game_len = nonzero[-1][-1] + 1 if len(nonzero) > 0 else 0
-                max_training_len = max(max_training_len, game_len)
-                accuracy_per_timestep[:game_len] += game_accuracy[:game_len]
-                added_preds[:game_len] += 1
-            
-        accuracy_per_timestep = accuracy_per_timestep[:max_training_len]
-        added_preds = added_preds[:max_training_len]
+            for game_X, game_accuracy, timestamps in zip(X, accuracy, t):
 
-        accuracy_per_timestep = accuracy_per_timestep / added_preds
+                for acc, timestamp in zip(game_accuracy, timestamps):
+                    accuracy_per_percent[timestamp] += acc
+                    percentage_samples[timestamp] += 1
+
+
+        accuracy_per_percent = accuracy_per_percent / percentage_samples
 
         trace0 = go.Scatter(
-            y=accuracy_per_timestep,
+            y=accuracy_per_percent,
             mode='lines',
             name='Accuracy'
         )
 
-        added_preds_normalized = added_preds / added_preds.max()
-
-        trace1 = go.Scatter(
-            y=added_preds_normalized,
-            mode='lines',
-            name='Number of games'
-        )
-
-        fig = go.Figure(data=[trace0,trace1])
+        fig = go.Figure(data=[trace0])
         if not os.path.exists(os.path.join(GRAPHS_FOLDER, 'accuracy')):
             os.makedirs(os.path.join(GRAPHS_FOLDER, 'accuracy'))
         fig.write_image(os.path.join(GRAPHS_FOLDER, 'accuracy', f'{epoch}.png'))

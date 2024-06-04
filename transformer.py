@@ -5,7 +5,7 @@ import math
 
 OUTPUT_DIM = 1
 NHEAD = 10
-N_LAYERS = 2
+N_LAYERS = 1
 N_GAME_CONT = 126
 N_PLAYER_CONT = 48
 N_ITEMS = 245
@@ -52,7 +52,7 @@ class TransformerModel(nn.Module):
         
         self.input_dim = input_dim
        
-        self.batch_norm = nn.BatchNorm1d(input_dim)
+        # self.batch_norm = nn.BatchNorm1d(input_dim)
 
         self.decoder = nn.Sequential(
             nn.Linear(input_dim, 400),
@@ -65,7 +65,7 @@ class TransformerModel(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(100, 50),
             nn.LeakyReLU(),
-            nn.Linear(100, output_dim)
+            nn.Linear(50, output_dim)
         )
             
         

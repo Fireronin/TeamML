@@ -64,9 +64,9 @@ class LoLDatasetCache(Dataset):
             self.cached_timestamps = timestamps_per_game
         
         if self.calculate_timestamps:
-            return self.cached_data[idx % self.cache_size], self.cached_targets[idx % self.cache_size], self.cached_timestamps[idx % self.cache_size]
+            return self.cached_data[idx % 1000], self.cached_targets[idx % 1000], self.cached_timestamps[idx % 1000]
         else:
-            return self.cached_data[idx % self.cache_size], self.cached_targets[idx % self.cache_size]
+            return self.cached_data[idx % 1000], self.cached_targets[idx % 1000]
         
 def index_split(n_games, seed=42):
     random.seed(seed)

@@ -32,16 +32,10 @@ epoch = checkpoint['epoch']
 
 model.eval()
 
-accuracy_per_timestep = np.zeros(data_stats['max_len'])
 accuracy_per_percent = np.zeros(101)
 percentage_samples = np.zeros(101)
 
-it = 0
 for X, y, t in tqdm(test_loader):
-    it += 1
-    if it >= 100:
-        break
-
     X = X.to(DEVICE)
     y = y.to(DEVICE)
 
