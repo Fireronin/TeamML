@@ -5,7 +5,7 @@ import math
 
 OUTPUT_DIM = 1
 NHEAD = 10
-N_LAYERS = 1
+N_LAYERS = 2
 N_GAME_CONT = 126
 N_PLAYER_CONT = 48
 N_ITEMS = 245
@@ -32,7 +32,7 @@ class TransformerModel(nn.Module):
 
         self.pos_encoder = PositionalEncoding(input_dim, dropout)
         encoder_layers = TransformerEncoderLayer(input_dim, nhead, dropout=dropout, batch_first=True)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers, norm=nn.LayerNorm(input_dim))
 
         # Linear layers and embeddings for different parts of the input
         self.game_linear = nn.Linear(ngame_cont, game_dim)
@@ -53,17 +53,14 @@ class TransformerModel(nn.Module):
         self.input_dim = input_dim
        
         # self.batch_norm = nn.BatchNorm1d(input_dim)
+        self.layer_norm = nn.LayerNorm(input_dim)
 
         self.decoder = nn.Sequential(
             nn.Linear(input_dim, 400),
             nn.LeakyReLU(),
             nn.Linear(400, 200),
-            #nn.BatchNorm1d(100),
             nn.LeakyReLU(),
-            nn.Linear(200, 100),
-            #nn.BatchNorm1d(50),
-            nn.LeakyReLU(),
-            nn.Linear(100, 50),
+            nn.Linear(200, 50),
             nn.LeakyReLU(),
             nn.Linear(50, output_dim)
         )
@@ -121,6 +118,8 @@ class TransformerModel(nn.Module):
         # src_reshaped = self.batch_norm(src_reshaped)
 
         # src = src_reshaped.view(src.shape)
+
+        src = self.layer_norm(src)
 
 
         src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
