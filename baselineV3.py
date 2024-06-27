@@ -1,3 +1,4 @@
+#%%
 import xgboost as xgb
 import sklearn.metrics
 import numpy as np
@@ -17,7 +18,7 @@ BATCH_SIZE = 1500000
 ITERATIONS = 1
 model = None
 DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DATA_FOLDER = 'transformed_data'
+DATA_FOLDER = 'filtered_data/filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
 SEED = 42
@@ -103,9 +104,9 @@ class LoLDatasetCache(Dataset):
                 # multiply by 100 to get the percentage then int
                 timestamps = (timestamps * 100).astype(np.int32)
                 if tensor_group.shape[0] > self.k_samples:
-                    #sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
+                    sample_indices = random.sample(range(tensor_group.shape[0]), self.k_samples)
                     # take first 10 samples
-                    sample_indices = [0]
+                    #sample_indices = [0]
 
                     
                     tensor_group = tensor_group[sample_indices]
@@ -142,7 +143,7 @@ def index_split(n_games):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],1)
+dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],80)
 train_indices, test_indices = index_split(data_stats['n_games'])
 train_dataset = Subset(dataset, train_indices)
 test_dataset = Subset(dataset, test_indices)
