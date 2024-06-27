@@ -10,7 +10,7 @@ from plotly.subplots import make_subplots
 #%%
 # Get all files
 
-folder_name = "transformed_data"
+folder_name = "filtered_data/filtered_data"
 files_list = os.listdir(folder_name)
 
 example_df = pl.read_parquet(os.path.join(folder_name, files_list[0]))
@@ -446,6 +446,14 @@ def gold_advantage_as_win_predictor_post_process(state):
                           yaxis_title='Win Ratio',
                           yaxis2=dict(title='Valid Gold Predictions', overlaying='y', side='right'))
         fig.show()
+    # save win per percentage data as csv
+    data = {
+        "correct": state['gb_correct_per_percent'],
+        "count": state['gb_valid_per_percent']
+    }
+    df = pl.DataFrame(data)
+    save_path = os.path.join('stats', 'gold_advantage_per_percent.csv')
+    df.write_csv(save_path)
     
     return state
 
@@ -555,11 +563,11 @@ std_of_all_games_tuple = ("std_of_all_games", std_of_all_games, std_of_all_games
 # [game_length_and_count_tuple, winning_team_tuple, first_kill_tuple, objective_counters_tuple,gold_advantage_as_win_predictor_tuple]
 tuple_list = [game_length_and_count_tuple, winning_team_tuple, first_kill_tuple, objective_counters_tuple,gold_advantage_as_win_predictor_tuple]
 
-# stats =  get_stats(files_list[:100000], tuple_list,early_stop=-1)
+stats =  get_stats(files_list[:100000], tuple_list,early_stop=-1)
 
 #%%
 
-# post_stats = post_process_stats(stats,tuple_list)
+post_stats = post_process_stats(stats,tuple_list)
 
 
 # %%

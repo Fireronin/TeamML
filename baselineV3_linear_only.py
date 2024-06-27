@@ -1,3 +1,4 @@
+#%%
 import xgboost as xgb
 import sklearn.metrics
 import numpy as np
@@ -14,11 +15,11 @@ import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.linear_model import LinearRegression
 
-BATCH_SIZE = 100000
+BATCH_SIZE = 150000
 ITERATIONS = 1
 model = None
 DEVICE = 'cpu' #"torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DATA_FOLDER = 'transformed_data'
+DATA_FOLDER = 'filtered_data/filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
 
@@ -100,7 +101,7 @@ def index_split(n_games):
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],1)
+dataset = LoLDatasetCache(data_stats['max_len'], data_stats['n_games'],80)
 train_indices, test_indices = index_split(data_stats['n_games'])
 train_dataset = Subset(dataset, train_indices)
 test_dataset = Subset(dataset, test_indices)
@@ -244,7 +245,9 @@ print('VAL SET MSE itr@{}: {}'.format(k, sklearn.metrics.mean_squared_error(y_te
 print('VAL SET Accuracy itr@{}: {}'.format(k, ((y_pr>0.5).astype(np.float32) ==  y_te).mean()))
 # save model
 # save model
-model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.json'))
+
+np.savetxt("accuracies_per_percent_linear.csv", accuracies_per_percent, delimiter=",", header="Accuracy", comments='')
+#model.save_model(os.path.join(CHECKPOINTS_FOLDER, f'model_final.json'))
 
 # y_pr = model.predict(xgb.DMatrix(x_te))
 # print('MSE at the end: {}'.format(sklearn.metrics.mean_squared_error(y_te, y_pr)))
