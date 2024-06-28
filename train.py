@@ -24,7 +24,7 @@ EVALUATE = True
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'training_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = None
+CHECKPOINT_FILE = 'checkpoint_0.pth'
 
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
@@ -37,7 +37,7 @@ with open('data_stats.json', 'r') as file:
 
 train_loader, test_loader = get_loaders(data_stats['max_len'], data_stats['n_games'], DATA_FOLDER, DEVICE, calculate_timestamps=True)
 
-model = get_model(data_stats['mean'], data_stats['std'], DEVICE)
+model = get_model(data_stats['mean'], data_stats['std'], DEVICE, data_stats['max_len'])
 
 optimizer = optim.Adam(model.parameters())
 criterion = nn.BCEWithLogitsLoss()
@@ -132,7 +132,7 @@ for epoch in tqdm(range(EPOCHS)):
 
             accuracy = (y_pred == y)
 
-            for game_X, game_accuracy, timestamps in zip(X, accuracy, t):
+            for game_accuracy, timestamps in zip(accuracy, t):
 
                 for acc, timestamp in zip(game_accuracy, timestamps):
                     accuracy_per_percent[timestamp] += acc

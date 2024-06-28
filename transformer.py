@@ -5,7 +5,7 @@ import math
 
 OUTPUT_DIM = 1
 NHEAD = 10
-N_LAYERS = 2
+N_LAYERS = 1
 N_GAME_CONT = 126
 N_PLAYER_CONT = 48
 N_ITEMS = 245
@@ -19,7 +19,7 @@ RUNES_DIM = 5
 DROPOUT = 0.1
 
 class TransformerModel(nn.Module):
-    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, player_dim, item_dim, champion_dim, runes_dim, mean, std, dropout, device):
+    def __init__(self, output_dim, nhead, nlayers, ngame_cont, nplayer_cont, nitems, nchampions, nrunes, game_dim, player_dim, item_dim, champion_dim, runes_dim, mean, std, dropout, device, max_len):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -32,7 +32,7 @@ class TransformerModel(nn.Module):
 
         self.pos_encoder = PositionalEncoding(input_dim, dropout)
         encoder_layers = TransformerEncoderLayer(input_dim, nhead, dropout=dropout, batch_first=True)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers, norm=nn.LayerNorm(input_dim))
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers, norm=nn.LayerNorm(input_dim, elementwise_affine=False))
 
         # Linear layers and embeddings for different parts of the input
         self.game_linear = nn.Linear(ngame_cont, game_dim)
@@ -52,17 +52,24 @@ class TransformerModel(nn.Module):
         
         self.input_dim = input_dim
        
-        # self.batch_norm = nn.BatchNorm1d(input_dim)
-        self.layer_norm = nn.LayerNorm(input_dim)
+        self.batch_norm = nn.BatchNorm1d(input_dim)
+        # self.layer_norm = nn.LayerNorm(input_dim)
 
+        # self.decoder = nn.Sequential(
+        #     nn.Linear(input_dim, 400),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(400, 200),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(200, 50),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(50, output_dim)
+        # )
         self.decoder = nn.Sequential(
-            nn.Linear(input_dim, 400),
+            nn.Linear(input_dim, 200),
             nn.LeakyReLU(),
-            nn.Linear(400, 200),
+            nn.Linear(200, 100),
             nn.LeakyReLU(),
-            nn.Linear(200, 50),
-            nn.LeakyReLU(),
-            nn.Linear(50, output_dim)
+            nn.Linear(100, output_dim)
         )
             
         
@@ -81,7 +88,7 @@ class TransformerModel(nn.Module):
         # Splitting the input tensor into different parts
         src_game = src[:, :, :self.ngame_cont]  # shape: (batch_size, game_len, ngame_cont)
         # using mean and std to normalize mean and std are vectors of size n_features
-        #src_game = (src_game - self.mean[:self.ngame_cont]) / self.std[:self.ngame_cont]
+        # src_game = (src_game - self.mean[:self.ngame_cont]) / self.std[:self.ngame_cont]
         
         src_item = src[:, :, self.ngame_cont:(self.ngame_cont + 1)].squeeze(dim=-1)  # shape: (batch_size, game_len)
         # src_teams and src_player_* are lists of tensors
@@ -89,9 +96,9 @@ class TransformerModel(nn.Module):
 
         src_player_linears = [src[:, :, (self.ngame_cont + 1 + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1) + (i + 1) * (self.nplayer_cont + 10) - 10] for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len, nplayer_cont)
         # normalize src_player_linears
-        #for i in range(10):
-        #    src_player_linears[i] = (src_player_linears[i] - self.mean[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]) \
-        #    / self.std[(self.ngame_cont + 1 + 2 * self.nteam_cont + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1 + 2 * self.nteam_cont) + (i + 1) * (self.nplayer_cont + 10) - 10]
+        # for i in range(10):
+        #    src_player_linears[i] = (src_player_linears[i] - self.mean[(self.ngame_cont + 1 + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1) + (i + 1) * (self.nplayer_cont + 10) - 10]) \
+        #    / self.std[(self.ngame_cont + 1 + i * (self.nplayer_cont + 10)):(self.ngame_cont + 1) + (i + 1) * (self.nplayer_cont + 10) - 10]
         
         src_player_champions = [src[:, :, (self.ngame_cont + 1 + (i + 1) * (self.nplayer_cont + 10) - 10):(self.ngame_cont + 1) + (i + 1) * (self.nplayer_cont + 10) - 9].squeeze(dim=-1) for i in range(10)]  # each tensor in the list has shape: (batch_size, game_len)
         src_player_runes = [src[:, :, (self.ngame_cont + 1 + (i + 1) * (self.nplayer_cont + 10) - 9):(self.ngame_cont + 1) + (i + 1) * (self.nplayer_cont + 10)] for i in range(10)] # each tensor in the list has shape: (batch_size, game_len, 9)
@@ -114,12 +121,12 @@ class TransformerModel(nn.Module):
 
         
         # Apply batch normalization
-        # src_reshaped = src.view(-1, src.shape[2])
-        # src_reshaped = self.batch_norm(src_reshaped)
+        src_reshaped = src.view(-1, src.shape[-1])
+        src_reshaped = self.batch_norm(src_reshaped)
 
-        # src = src_reshaped.view(src.shape)
+        src = src_reshaped.view(src.shape)
 
-        src = self.layer_norm(src)
+        # src = self.layer_norm(src)
 
 
         src = self.pos_encoder(src)  # shape: (batch_size, game_len, input_dim)
@@ -164,7 +171,7 @@ class PositionalEncoding(nn.Module):
         # output tensor of shape (batch_size, game_len, d_model) after dropout
         return self.dropout(x)
 
-def get_model(mean, std, device):
+def get_model(mean, std, device, max_len):
     model = TransformerModel(
         OUTPUT_DIM, 
         NHEAD, 
@@ -182,7 +189,8 @@ def get_model(mean, std, device):
         mean,
         std,
         DROPOUT,
-        device
+        device,
+        max_len
     ).to(device)
 
     return model

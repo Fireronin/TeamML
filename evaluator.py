@@ -6,6 +6,7 @@ from dataset import get_loaders
 from transformer import get_model
 import torch
 import plotly.graph_objects as go
+import polars as pl
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,12 +18,12 @@ print(f'Device: {DEVICE}')
 DATA_FOLDER = 'filtered_data'
 GRAPHS_FOLDER = 'evaluation_graphs'
 CHECKPOINTS_FOLDER = 'checkpoints'
-CHECKPOINT_FILE = 'checkpoint_4_test.pth'
+CHECKPOINT_FILE = 'checkpoint_4.pth'
 
 with open('data_stats.json', 'r') as file:
     data_stats = json.load(file)
 
-model = get_model(data_stats['mean'], data_stats['std'], DEVICE)
+model = get_model(data_stats['mean'], data_stats['std'], DEVICE, data_stats['max_len'])
 
 train_loader, test_loader = get_loaders(data_stats['max_len'], data_stats['n_games'], DATA_FOLDER, DEVICE, calculate_timestamps=True)
 
@@ -50,7 +51,7 @@ for X, y, t in tqdm(test_loader):
 
     accuracy = (y_pred == y)
 
-    for game_X, game_accuracy, timestamps in zip(X, accuracy, t):
+    for game_accuracy, timestamps in zip(accuracy, t):
 
         for acc, timestamp in zip(game_accuracy, timestamps):
             accuracy_per_percent[timestamp] += acc
@@ -68,4 +69,9 @@ trace0 = go.Scatter(
 fig = go.Figure(data=[trace0])
 if not os.path.exists(GRAPHS_FOLDER):
     os.makedirs(GRAPHS_FOLDER)
-fig.write_image(os.path.join(GRAPHS_FOLDER, f'{epoch}_test.png'))
+fig.write_image(os.path.join(GRAPHS_FOLDER, f'{epoch}.png'))
+
+
+df = pl.DataFrame(accuracy_per_percent)
+save_path = os.path.join('stats', '{epoch}_accuracy_per_percent.csv')
+df.write_csv(save_path)
